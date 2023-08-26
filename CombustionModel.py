@@ -11,6 +11,31 @@ import matplotlib.pyplot as plt
 # Constants
 Ru = 8.3145 # Univeral gas constant [J/mol*K]
 
+def calculateMassFlow(oxidiserMass, fuelMass, mixtureRatio):
+    # Function which calculates the enthalpy of a element based off given temperature range
+    #--------------------------------------------------------------------------------------
+    # Inputs: name - type - desc - units
+    # oxidiserMass - float - mass of oxidiser - [g/mol]
+    # fuelMass - float - mass of fuel - [g/mol]
+    # mixtureRatio - float - oxidiser to fuel mixture ratio - Unitless
+    #--------------------------------------------------------------------------------------
+    #Outputs: name - type - desc - units
+    # massFlow - array - array of form [oxidiser mass flow rate, y, fuel mass flow rate, x] - [kg/sec]
+    # mass flow rates are in kg/sec
+    # x and y are the stoichiometric ratios in terms of moles for the fuel and oxidiser respectively
+    #--------------------------------------------------------------------------------------
+
+    # assume y = 1 (1 mole of oxidiser)
+    y = 1
+    x = oxidiserMass/(fuelMass*mixtureRatio)
+
+    # Note this is only for H2 O2 reaction will need to re-calculate stoichiometric mixture for other oxidiser fuel mixtures
+    massFlowOxidiser = oxidiserMass*y
+    massFlowFuel = fuelMass*x
+    
+    massFlow = [massFlowOxidiser,y, massFlowFuel, x]
+    return massFlow
+
 def calculateEnthalpy(T_array,thermoDictionary, b_element, r_element):
     # Function which calculates the enthalpy of a element based off given temperature range
     #--------------------------------------------------------------------------------------
@@ -46,7 +71,7 @@ def calculateEnthalpy(T_array,thermoDictionary, b_element, r_element):
 
         # Calculate enthalpy - based off https://ntrs.nasa.gov/api/citations/19940013151/downloads/19940013151.pdf pg9 
         h_T[i] = a1 + a2*T_array[i]/2 + a3*(T_array[i]**2)/3 + a4*(T_array[i]**3)/4 + a5*(T_array[i]**4)/5 + b1/T_array[i]
-
+        h_T[i] = h_T[i]*Ru*T_array[i]
     return h_T
 
 def calculateEntropy(T_array, thermoDictionary, b_element, r_element):
@@ -85,7 +110,7 @@ def calculateEntropy(T_array, thermoDictionary, b_element, r_element):
         # Calculate etropy - based off https://ntrs.nasa.gov/api/citations/19940013151/downloads/19940013151.pdf pg9 
         S_T[i] = a1*np.log(T_array[i]) + a2*T_array[i] + a3*(T_array[i]**2)/2 + a4*(T_array[i]**3)/3 + a5*(T_array[i]**4)/4 + b2
 
-    return S_T
+    return S_T*Ru
 
 def calculateGibbsEnergy(T_array, h_T, S_T):
     # Function which calculates the Gibbs Free Energy of a element based off a givent temperature range
@@ -102,7 +127,7 @@ def calculateGibbsEnergy(T_array, h_T, S_T):
     G_T = np.zeros(len(T_array)) # Pre-load Gibbs energy array with zeros to reduce computation load [K*J/mol]
 
     for i in range(len(T_array)):
-        G_T[i] = (h_T[i] * Ru * T_array[i]) - (T_array[i] * S_T[i] * Ru)
+        G_T[i] = (h_T[i]) - (T_array[i] * S_T[i])
 
     return G_T
 
@@ -168,118 +193,60 @@ def main():
     "rH": [2.50000286E+00, -5.65334214E-09, 3.63251723E-12, -9.19949720E-16, 7.95260746E-20, 2.54736589E+04, -4.4669849E-01],
     "rO": [2.54363697E+00, -2.73162486E-05, -4.19029520E-09, 4.95481845E-12, -4.79553694E-16, 2.92260120E+04, 4.92229457E+00]}
 
+    # Temperature array 
     T_array = np.arange(300,4000,10) # Temperature array 0-4000K [K]
+
+    # Mixture ratio
+    mixtureRatio = 6 # OF ratio
+
+    # Molecular weights of reactants
+    oxidiserMass = 32 # [g/mol]
+    fuelMass = 2 # [g/mol] 
+
+
+    # Calculate flow rates for oxidiser and fuel reactants
+    mdot_O2, y, mdot_H2, x = calculateMassFlow(oxidiserMass, fuelMass, mixtureRatio)
+
+
+    
 
     # Calculate equilibrium constants for eq 3.1.a-d using partial pressure K_P
     #----------------------------------------------------------------------------------------------------------------------------------------
-    
-
-    # Lets just get one correct data point
-    #choose 3.1b as our official test at 500K the Kp should be close to -120
-    temp = 1500 # temp in K
-
-    if temp > 1000:
-        a1_H = 2.50000286E+00
-        a2_H = -5.65334214E-09
-        a3_H = 3.63251723E-12
-        a4_H = -9.19949720E-16
-        a5_H = 7.95260746E-20	
-        b1_H = 2.54736589E+04
-        b2_H = -4.46698494E-01
-
-        a1_H2 = 2.93286579E+00
-        a2_H2 = 8.26607967E-04
-        a3_H2 = -1.46402335E-07
-        a4_H2 = 1.54100359E-11	
-        a5_H2 = -6.888044032E-016
-        b1_H2 = -8.13065597E+02
-        b2_H2 = -1.02432887E+00
-    else:
-        a1_H = 2.5000000E+00
-        a2_H = 0.0000000E+00
-        a3_H = 0.0000000E+00
-        a4_H = 0.0000000E+00
-        a5_H = 0.0000000E+00	
-        b1_H = 2.5473660E+04
-        b2_H = -4.4668290E-01
-
-        a1_H2 = 2.3443311E+00
-        a2_H2 = 7.9805210E-03
-        a3_H2 = -1.9478000E-05
-        a4_H2 = 2.0157200E-08	
-        a5_H2 = -7.3761200E-12	
-        b1_H2 = -9.1793517E+02	
-        b2_H2 = 6.8301024E-01
-
-
-    a1_BeOH = 1.35071590E-2
-    a2_BeOH = -1.85316870E-5
-    a3_BeOH = 1.29424710E-8
-    a4_BeOH = -3.54389610E-12
-    a5_BeOH = -1.48196830E4
-    b1_BeOH = 1.09928304E1
-    b2_BeOH = -1.37885210E4
-
-    Cp = a1_H2 + a2_H2*temp + a3_H2*(temp**2) + a4_H2*(temp**3) + a5_H2*(temp**4)
-
-    #print("Heat capacity at {0}K: {1} [J/mol K]".format(temp,Cp))
-    
-
-    h_H = a1_H + a2_H*temp/2 + a3_H*(temp**2)/3 + a4_H*(temp**3)/4 + a5_H*(temp**4)/5 + b1_H/temp
-    h_H2 = a1_H2 + a2_H2*temp/2 + a3_H2*(temp**2)/3 + a4_H2*(temp**3)/4 + a5_H2*(temp**4)/5 + b1_H2/temp
-
-    S_H = a1_H*np.log(temp) + a2_H*temp + a3_H*(temp**2)/2 +a4_H*(temp**3)/3 + a5_H*(temp**4)/4 + b2_H
-    S_H2 = a1_H2*np.log(temp) + a2_H2*temp + a3_H2*(temp**2)/2 +a4_H2*(temp**3)/3 + a5_H2*(temp**4)/4 + b2_H2
-
-    G_H = (h_H*Ru*temp) - (temp*(S_H*Ru))
-    G_H2 = (h_H2*Ru*temp) - (temp*(S_H2*Ru))
-
-    deltaG = 2*G_H - G_H2
-    log10Kp = -1*deltaG/(Ru*temp)
-
-    H2text = "Molecular Hydrgen [H2] \nEnthalpy {0}K = {1}[J/mol] \nEntropy = {2} [J/mol] \nGibbs = {3} [J/mol]".format(temp,h_H2, S_H2, G_H2)
-    Htext = "Atomic Hydrogen [H] \nEnthalpy {0}K = {1}[J/mol] \nEntropy = {2} [J/mol] \nGibbs = {3} [J/mol] \ndeltaG = {4} [J/mol] \nKp = {5} ".format(temp,h_H, S_H, G_H, deltaG, log10Kp)
-    print(H2text)
-    print(Htext)
-
-
     # Step 1 calculate enthalpy of required elements H2, O2, H2O, H, OH for temperature range T_array
-    h2_O2 = calculateEnthalpy(T_array, thermo_curve_dict, "bO2", "rO2")
-    h2_H2 = calculateEnthalpy(T_array,thermo_curve_dict,"bH2","rH2")
-    h2_H2O = calculateEnthalpy(T_array, thermo_curve_dict, "bH2O", "rH2O")
-    h2_H = calculateEnthalpy(T_array,thermo_curve_dict,"bH","rH")
-    h2_OH = calculateEnthalpy(T_array,thermo_curve_dict, "bOH", "rOH")
-    h2_O = calculateEnthalpy(T_array, thermo_curve_dict, "bO", "rO")
+    h_O2 = calculateEnthalpy(T_array, thermo_curve_dict, "bO2", "rO2")
+    h_H2 = calculateEnthalpy(T_array,thermo_curve_dict,"bH2","rH2")
+    h_H2O = calculateEnthalpy(T_array, thermo_curve_dict, "bH2O", "rH2O")
+    h_H = calculateEnthalpy(T_array,thermo_curve_dict,"bH","rH")
+    h_OH = calculateEnthalpy(T_array,thermo_curve_dict, "bOH", "rOH")
+    h_O = calculateEnthalpy(T_array, thermo_curve_dict, "bO", "rO")
 
     # Step 2 calculate entropy of required elements H2, O2, H2O for temperature range T_array
-    S2_O2 = calculateEntropy(T_array, thermo_curve_dict, "bO2", "rO2")
-    S2_H2 = calculateEntropy(T_array, thermo_curve_dict, "bH2", "rH2")
-    S2_H2O = calculateEntropy(T_array, thermo_curve_dict, "bH2O", "rH2O")
-    S2_H = calculateEntropy(T_array, thermo_curve_dict, "bH","rH")
-    S2_OH = calculateEntropy(T_array,thermo_curve_dict, "bOH", "rOH")
-    S2_O = calculateEntropy(T_array,thermo_curve_dict,"bO", "rO")
+    S_O2 = calculateEntropy(T_array, thermo_curve_dict, "bO2", "rO2")
+    S_H2 = calculateEntropy(T_array, thermo_curve_dict, "bH2", "rH2")
+    S_H2O = calculateEntropy(T_array, thermo_curve_dict, "bH2O", "rH2O")
+    S_H = calculateEntropy(T_array, thermo_curve_dict, "bH","rH")
+    S_OH = calculateEntropy(T_array,thermo_curve_dict, "bOH", "rOH")
+    S_O = calculateEntropy(T_array,thermo_curve_dict,"bO", "rO")
 
     # Step 3 calculate Gibbs Energy for T_array
-    G2_O2 = calculateGibbsEnergy(T_array, h2_O2, S2_O2)
-    G2_H2 = calculateGibbsEnergy(T_array, h2_H2, S2_H2)
-    G2_H2O = calculateGibbsEnergy(T_array, h2_H2O, S2_H2O)
-    G2_H = calculateGibbsEnergy(T_array, h2_H, S2_H)
-    G2_OH = calculateGibbsEnergy(T_array,h2_OH, S2_OH)
-    G2_O = calculateGibbsEnergy(T_array, h2_O, S2_O)
+    G_O2 = calculateGibbsEnergy(T_array, h_O2, S_O2)
+    G_H2 = calculateGibbsEnergy(T_array, h_H2, S_H2)
+    G_H2O = calculateGibbsEnergy(T_array, h_H2O, S_H2O)
+    G_H = calculateGibbsEnergy(T_array, h_H, S_H)
+    G_OH = calculateGibbsEnergy(T_array,h_OH, S_OH)
+    G_O = calculateGibbsEnergy(T_array, h_O, S_O)
 
     # Step 4 calculate change in gibbs energy for equation 3.1b
-    deltaG2_a = calculateDeltaG([2],[G2_H2O], [2,1],[G2_H2, G2_O2])
-    deltaG2_b = calculateDeltaG([2], [G2_H], [1], [G2_H2]) #product coefficients, product gibbs, reactant coefficients, reactant gibbs
-    deltaG2_c = calculateDeltaG([2],[G2_O],[1],[G2_O2])
-    deltaG2_d = calculateDeltaG([1,2],[G2_H2,G2_OH],[2],[G2_H2O])    
-
+    deltaG_a = calculateDeltaG([2],[G_H2O], [2,1],[G_H2, G_O2])
+    deltaG_b = calculateDeltaG([2], [G_H], [1], [G_H2]) #product coefficients, product gibbs, reactant coefficients, reactant gibbs
+    deltaG_c = calculateDeltaG([2],[G_O],[1],[G_O2])
+    deltaG_d = calculateDeltaG([1,2],[G_H2,G_OH],[2],[G_H2O])    
 
     # Step 5 calculate Partial pressure equilibrium constant for equation 3.1b
-    log10Kp_a = calculatePartialPressure(T_array,deltaG2_a)
-    log10Kp_b = calculatePartialPressure(T_array,deltaG2_b)
-    log10Kp_c = calculatePartialPressure(T_array,deltaG2_c)
-    log10Kp_d = calculatePartialPressure(T_array,deltaG2_d)
-
+    log10Kp_a = calculatePartialPressure(T_array,deltaG_a)
+    log10Kp_b = calculatePartialPressure(T_array,deltaG_b)
+    log10Kp_c = calculatePartialPressure(T_array,deltaG_c)
+    log10Kp_d = calculatePartialPressure(T_array,deltaG_d)
 
     fig = plt.figure()
     ax = fig.add_subplot(1,1,1)
@@ -299,4 +266,30 @@ def main():
     ax.grid()
     plt.show()
 
+    # Moving on in the document:
+    # want to calculte enthalpy of formation and enthalpy magnitude for formation of H2O
+
+
+    T_array = [298.15, 400, 500] # Temperatures of interest
+
+    # formation of H2O => H2 + 1/2 O2 = H2O
+    
+    h_H2 = calculateEnthalpy(T_array, thermo_curve_dict, 'bH2', 'rH2')
+    h_O2 = calculateEnthalpy(T_array, thermo_curve_dict, 'bO2', 'rO2')
+    h_H2O = calculateEnthalpy(T_array, thermo_curve_dict, 'bH2O','rH2O')
+
+    heatFormationH2O = h_H2O - 0.5*h_O2 - h_H2
+    enthalpyMagH2O = heatFormationH2O[0]+h_H2O[2] - h_H2O[0]
+
+    # Display
+    for i in range(len(T_array)):
+        print("Temp [k]: {0} Enthalpy [J/mol]: {1} heatFormationH2O [J/mol]: {2}\n".format(T_array[i], h_H2O[i], heatFormationH2O[i]))
+
+    print(enthalpyMagH2O)
+
+    # Diagnosis texts for future use will need to change to align with what is needed
+    # H2text = "Molecular Hydrgen [H2] \nEnthalpy {0}K = {1}[J/mol] \nEntropy = {2} [J/mol] \nGibbs = {3} [J/mol]".format(temp,h_H2, S_H2, G_H2)
+    # Htext = "Atomic Hydrogen [H] \nEnthalpy {0}K = {1}[J/mol] \nEntropy = {2} [J/mol] \nGibbs = {3} [J/mol] \ndeltaG = {4} [J/mol] \nKp = {5} ".format(temp,h_H, S_H, G_H, deltaG, log10Kp)
+    # print(H2text)
+    # print(Htext)
 main()
