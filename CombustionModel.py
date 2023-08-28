@@ -203,9 +203,34 @@ def main():
     oxidiserMass = 32 # [g/mol]
     fuelMass = 2 # [g/mol] 
 
-
     # Calculate flow rates for oxidiser and fuel reactants
     mdot_O2, y, mdot_H2, x = calculateMassFlow(oxidiserMass, fuelMass, mixtureRatio)
+
+    # Define mole fractions for each of the mixtures 3.1a-d
+    # molFracDenominator = -y*a+x+y+b+c+d
+
+    # Define Ci coefficients in terms of a,b,c,d,x,y for each of the elements
+    # C_H2O = 2*y*a-2*d
+    # C_H2 = x-2*y*a-b+d
+    # C_O2 = y-ya-c
+    # C_OH = 2*d
+    # C_H = 2*b
+    # C_O = 2*c
+
+    # Z_O2 = C_O2/molFracDenominator
+    # Z_H2O = C_H2O/molFracDenominator
+    # Z_H2 = C_H2/molFracDenominator
+    # Z_OH = C_OH/molFracDenominator
+    # Z_H = C_H/molFracDenominator
+    # Z_O = C_O/molFracDenominator
+
+    # # Define mass generation rates for all product terms
+    # Ndot_H2 = (C_H2/(x+y))*(mdot_H2+mdot_O2)
+    # Ndot_O2 = (C_O2/(x+y))*(mdot_H2+mdot_O2)
+    # Ndot_H2O = (C_H2O/(x+y))*(mdot_H2+mdot_O2)
+    # Ndot_OH = (C_OH/(x+y))*(mdot_H2+mdot_O2)
+    # Ndot_H = (C_H/(x+y))*(mdot_H2+mdot_O2)
+    # Ndot_O = (C_O/(x+y))*(mdot_H2+mdot_O2)
 
 
     
@@ -248,8 +273,9 @@ def main():
     log10Kp_c = calculatePartialPressure(T_array,deltaG_c)
     log10Kp_d = calculatePartialPressure(T_array,deltaG_d)
 
-    fig = plt.figure()
-    ax = fig.add_subplot(1,1,1)
+
+    fig1 = plt.figure(1)
+    ax = fig1.add_subplot(1,1,1)
 
     ax.plot(T_array, log10Kp_a,linewidth=2.0, label = "3.1a")
     ax.plot(T_array, log10Kp_b, linewidth=2.0, label = "3.1b")
@@ -264,6 +290,7 @@ def main():
     ax.set_ylabel(r'$\log_{10} (K_p)$')
     ax.set_title(r'$\log_{10} (K_p)$ vs Temperature')
     ax.grid()
+
     plt.show()
 
     # Moving on in the document:
