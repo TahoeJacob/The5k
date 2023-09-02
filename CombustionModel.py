@@ -313,10 +313,4 @@ def main():
         print("Temp [k]: {0} Enthalpy [J/mol]: {1} heatFormationH2O [J/mol]: {2}\n".format(T_array[i], h_H2O[i], heatFormationH2O[i]))
 
     print(enthalpyMagH2O)
-
-    # Diagnosis texts for future use will need to change to align with what is needed
-    # H2text = "Molecular Hydrgen [H2] \nEnthalpy {0}K = {1}[J/mol] \nEntropy = {2} [J/mol] \nGibbs = {3} [J/mol]".format(temp,h_H2, S_H2, G_H2)
-    # Htext = "Atomic Hydrogen [H] \nEnthalpy {0}K = {1}[J/mol] \nEntropy = {2} [J/mol] \nGibbs = {3} [J/mol] \ndeltaG = {4} [J/mol] \nKp = {5} ".format(temp,h_H, S_H, G_H, deltaG, log10Kp)
-    # print(H2text)
-    # print(Htext)
 main()
