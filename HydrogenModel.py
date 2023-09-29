@@ -13,12 +13,14 @@
 import numpy as np
 import csv
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 
 # Define global constants
-critical_density = 31.112 #[kg/m^3]
-criitcal_temperature = 32.938 #[K]
-critical_pressure = 1.284 #[MPa] Note 1MPa = 10Bar
+critDensity = 31.112 #[kg/m^3]
+critTemperature = 32.938 #[K]
+critPressure = 1.284 #[MPa] Note 1MPa = 10Bar
+univeralGasConstant = 8.31446261815324 # Universal gas constant [J/Kmol]
 
 def extractFileCSV(filename):
     # Function which takes in a csv file and extracts its infromation into a numpy array
@@ -131,7 +133,7 @@ def alphaR_delta(tau, delta, coeff):
 
 
 # Function which takes in density and temperature and calculates pressure based off reisdual components of the helmholtz equation
-def calcPressure(temp, density, gasConstant, coeff):
+def calcPressure(temp, density, coeff):
     # Function which takes in temperature [K] and density [kg/m^3] and retruns pressure [MPa]
     #----------------------------------------------------------------------------------------------------------------------------------------
     # Inputs: 
@@ -145,15 +147,16 @@ def calcPressure(temp, density, gasConstant, coeff):
     #----------------------------------------------------------------------------------------------------------------------------------------
 
     # Known variables
-    tau = temp/criitcal_temperature
-    delta = density/critical_density
+    delta = density/critDensity
+    tau = temp/critTemperature
 
     # calculate first derrivative of residual component w.r.t delta
-    dalpha_by_ddelta = alphaR_delta(tau, delta,coeff)
+    alpha = alphaR_delta(tau, delta,coeff)
 
-    pressure = density*gasConstant*temp*(1+delta*dalpha_by_ddelta)
+    pressure = temp*density*univeralGasConstant*(1+delta*alpha)
 
     return pressure
+
 def main():
     # Function which runs all required models and wraps up information neatly
     #--------------------------------------------------------------------------------------
@@ -191,17 +194,12 @@ def main():
         'D_i':[0,0,0,0,0,0,0,0,0,0.6366,0.3876,0.9437,0.3976,0.9626]
     }
 
-    # Gas Constants
-    hydrogenGasConstant = 8.3144626  #4124.2 # [J/kgK] https://www.engineeringtoolbox.com/individual-universal-gas-constant-d_588.html
-
     paraTemp, paraPercent = paraPercentFunction()
  
-    # OKAY steps going forward, need to ensure the FDS actually works when calculating density, goal for today is to match figure 2.2.3 
-
     # Get Temperature and density data from NIST for hydrogen at 2x critical pressure 
-    targetPressure = 2*critical_pressure
-    tempHigh = 6*criitcal_temperature
-    print("Target is to calculate reduced density of H2 at {0:.3} MPa which is {1:.3f} reduced pressure, and over a range of {2:.3f} to {3:.3f} reduced temperature".format(targetPressure,targetPressure/critical_pressure,13.957, 6*criitcal_temperature))
+    targetPressure = 2*critTemperature
+  
+    #print("Target is to calculate reduced density of H2 at {0:.3} MPa which is {1:.3f} reduced pressure, and over a range of {2:.3f} to {3:.3f} reduced temperature".format(targetPressure,targetPressure/critical_pressure,13.957, 6*criitcal_temperature))
 
 
     tempArrayCp2, pressureArrayCp2, densityArrayCp2 = extractNISTData('2Pc.csv')
@@ -209,71 +207,95 @@ def main():
     # test1 find reduced density at 2x critical pressure and 1.7 critical temp
 
     # target temp
-
-    targetReducedTemp = 1.7
-    targetTemp = targetReducedTemp*criitcal_temperature
-
-    # find the closest value in NIST temp array takes in array and target value
-    closestTempNIST = min(tempArrayCp2, key=lambda x: abs(targetTemp - x))
-    initialGuessIndex = tempArrayCp2.index(closestTempNIST)
+    targetTempArray = np.arange(0.4,6,0.1)
 
 
-    # determine ortho para percentages based off temp
-    closestTemp = min(paraTemp,key=lambda x: abs(targetTemp-x))
-    paraIndex = paraTemp.index(closestTemp)
-    percentagePara = (paraPercent[paraIndex]/100)
-    percentageOrtho = 1-percentagePara
+    # Create a figure
+    fig1 = plt.figure(2)
+    ax = fig1.add_subplot(1,1,1)
+
+    predictedDensityArray = []
+
+
+    for targetTemp in targetTempArray:
+        # find the closest value in NIST temp array takes in array and target value
+        closestTempNIST = min(tempArrayCp2, key=lambda x: abs(targetTemp*critTemperature - x))
+        initialGuessIndex = tempArrayCp2.index(closestTempNIST)
+
+
+        # determine ortho para percentages based off temp
+        closestTemp = min(paraTemp,key=lambda x: abs(targetTemp*critTemperature-x))
+        paraIndex = paraTemp.index(closestTemp)
+        percentagePara = (paraPercent[paraIndex]/100)
+        percentageOrtho = 1-percentagePara
+
+        #initial density guess based off NIST data
+        densityGuess = densityArrayCp2[initialGuessIndex]
+
+        # Do i iterations of the finite difference scheme to calculate the predicted density at said temp and pressure
+
+        # Density step size (delta Density)
+        deltaDensity = densityGuess/1000
+        changeInDensity = 1
+        while (changeInDensity > 0.1):
+            #------------------------- Para Density Calculation------------------------------------------------------------
+            pressurePlusPara = calcPressure(closestTempNIST,densityGuess+deltaDensity, para_coeff)
+            pressureMinusPara = calcPressure(closestTempNIST,densityGuess-deltaDensity, para_coeff)
+
+            drho_by_dP_Para = (pressurePlusPara-pressureMinusPara)/(2*deltaDensity)
+
+
+            #PGuessPara = calcPressure(closestTempNIST, densityGuess, para_coeff)
+            PGuessPara = critPressure*np.exp(3.098*((closestTempNIST/critTemperature)-1)**0.849)
+            densityGuessPara = densityGuess-PGuessPara/drho_by_dP_Para
+
     
 
-    # we have NIST data for pressure of interest which in this test case is 2x the critical pressure
-    pressureOfIntrest = 2*critical_pressure
+            #------------------------- Ortho Density Calculation------------------------------------------------------------
 
-    #initial density guess based off NIST data
-    densityGuess = densityArrayCp2[initialGuessIndex]
-    densityGuessPara = densityArrayCp2[initialGuessIndex]
-    densityGuessOrtho = densityArrayCp2[initialGuessIndex]
+            pressurePlusOrtho = calcPressure(closestTempNIST,densityGuess+deltaDensity, ortho_coeff)
+            pressureMinusOrtho = calcPressure(closestTempNIST,densityGuess-deltaDensity, ortho_coeff)
 
-    # Do i iterations of the finite difference scheme to calculate the predicted density at said temp and pressure
+            drho_by_dP_Ortho = (pressurePlusOrtho-pressureMinusOrtho)/(2*deltaDensity)
 
-    # Density step size (delta Density)
-    deltaDensityPara = densityGuess/1000
-    deltaDensityOrtho = densityGuess/1000
-    for i in range(2):
-        #------------------------- Para Density Calculation------------------------------------------------------------
-        pressurePlusPara = calcPressure(targetTemp,densityGuessPara+deltaDensityPara, hydrogenGasConstant, para_coeff)
-        pressureMinusPara = calcPressure(targetTemp,densityGuessPara-deltaDensityPara, hydrogenGasConstant, para_coeff)
 
-        drho_by_dP_Para = (pressurePlusPara-pressureMinusPara)/(2*deltaDensityPara)
+            #PGuessOrtho = calcPressure(closestTempNIST, densityGuess, ortho_coeff)
+            PGuessOrtho = critPressure*np.exp(3.098*((closestTempNIST/critTemperature)-1)**0.849)
 
-        PGuessPara = calcPressure(targetTemp, densityGuessPara, hydrogenGasConstant, para_coeff)
+            densityGuessOrtho = densityGuess - PGuessOrtho/drho_by_dP_Ortho
+            PGuessOrtho/drho_by_dP_Ortho
 
-        densityGuessPara = densityGuessPara+((PGuessPara - pressureOfIntrest)/drho_by_dP_Para)
+            
+            
+            
+            
+            #------------------------- Density Calculation------------------------------------------------------------------
+            densityGuessPrev = densityGuess
+            densityGuess = (percentageOrtho*densityGuessOrtho) + (percentagePara*densityGuessPara)
+            deltaDensity= densityGuess/1000
+            changeInDensity = densityGuess - densityGuessPrev
+            print(changeInDensity)
+            #print("Para Density: {0:.5f}\n Ortho Density: {1:.5f}\n Total Density: {2:.5f}\n Change In Density {3:.5f}".format(densityGuessPara, densityGuessOrtho, densityGuess/critical_density, deltaGuess))
+            #print(abs(densityGuess-densityGuessPrev))
+        #print(densityGuess/critDensity)
+        predictedDensityArray.append(densityGuess/critDensity)
 
-        
-        deltaDensityPara = densityGuessPara/1000
 
-        #------------------------- Ortho Density Calculation------------------------------------------------------------
+    ax.plot(targetTempArray, predictedDensityArray,linewidth=2.0, label = "P Jacob")
 
-        pressurePlusOrtho = calcPressure(targetTemp,densityGuessOrtho+deltaDensityOrtho, hydrogenGasConstant, ortho_coeff)
-        pressureMinusOrtho = calcPressure(targetTemp,densityGuessOrtho-deltaDensityOrtho, hydrogenGasConstant, ortho_coeff)
 
-        drho_by_dP_Ortho = (pressurePlusOrtho-pressureMinusOrtho)/(2*deltaDensityOrtho)
+    ax.legend()
 
-        PGuessOrtho = calcPressure(targetTemp, densityGuessOrtho, hydrogenGasConstant, ortho_coeff)
 
-        densityGuessOrtho = densityGuessOrtho+((PGuessOrtho - pressureOfIntrest)/drho_by_dP_Ortho)
+    ax.set_xlim([0,6])
+    ax.set_ylim([0,3])
+    ax.set_xlabel("Reduced Temperature")
+    ax.set_ylabel("Reduced Density")
+    ax.set_title("Reduced Density vs Reduced Temperature")
+    ax.grid()
 
-        
-        deltaDensityOrtho = densityGuessOrtho/1000
-        
-        
-        #------------------------- Density Calculation------------------------------------------------------------------
-        densityGuessPrev = densityGuess
-        densityGuess = (percentageOrtho*densityGuessOrtho) + (percentagePara*densityGuessPara)
-
-        deltaGuess = densityGuess-densityGuessPrev
-        print("Para Density: {0:.5f}\n Ortho Density: {1:.5f}\n Total Density: {2:.5f}\n Change In Density {3:.5f}".format(densityGuessPara, densityGuessOrtho, densityGuess, deltaGuess))
-
+    plt.show()
+    
 
     paraN = 9 # number of steps for k if parahydrogen
     orthoN = 6 # number of steps for k if orthohydrogen

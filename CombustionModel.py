@@ -297,7 +297,7 @@ def main():
     # want to calculte enthalpy of formation and enthalpy magnitude for formation of H2O
 
 
-    T_array = [298.15, 400, 500] # Temperatures of interest
+    T_array = [298.15, 400, 3600] # Temperatures of interest
 
     # formation of H2O => H2 + 1/2 O2 = H2O
     
