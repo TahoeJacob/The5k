@@ -119,8 +119,6 @@ def calculateEnthalpy(T,thermoDictionary, b_element, r_element):
         h_T = h_T*Ru*T * 1000
     return h_T
 
-
-
 def calculateEnthalpyV2(T_array,thermoDictionary, b_element, r_element):
     # Function which calculates the enthalpy of a element based off given temperature range
     #--------------------------------------------------------------------------------------
@@ -156,7 +154,7 @@ def calculateEnthalpyV2(T_array,thermoDictionary, b_element, r_element):
 
         # Calculate enthalpy - based off https://ntrs.nasa.gov/api/citations/19940013151/downloads/19940013151.pdf pg9 
         h_T[i] = a1 + a2*T_array[i]/2 + a3*(T_array[i]**2)/3 + a4*(T_array[i]**3)/4 + a5*(T_array[i]**4)/5 + b1/T_array[i]
-        h_T[i] = h_T[i]*Ru*T_array[i] * 1000
+        h_T[i] = h_T[i]*Ru*T_array[i] 
     return h_T
 
 def calculateEntropy(T, thermoDictionary, b_element, r_element):
@@ -232,7 +230,7 @@ def calculateEntropyV2(T_array, thermoDictionary, b_element, r_element):
         # Calculate etropy - based off https://ntrs.nasa.gov/api/citations/19940013151/downloads/19940013151.pdf pg9 
         S_T[i] = a1*np.log(T_array[i]) + a2*T_array[i] + a3*(T_array[i]**2)/2 + a4*(T_array[i]**3)/3 + a5*(T_array[i]**4)/4 + b2
 
-    return S_T*Ru*1000
+    return S_T*Ru
 
 def calculateGibbsEnergy(T, h_T, S_T):
     # Function which calculates the Gibbs Free Energy of a element based off a givent temperature range
@@ -763,6 +761,7 @@ def main():
                         [df4_da, df4_db, df4_dc, df4_dd, df4_dT],
                         [df5_da, df5_db, df5_dc, df5_dd, df5_dT]])
 
+    print(F_prime)
     # Defnine the F matrix
     F = -1*np.array([[calculatef1(a, b, c, d, log10Kp_a, P , x, y)],
                      [calculatef2(a, b, c, d, log10Kp_b, P, x, y)],
