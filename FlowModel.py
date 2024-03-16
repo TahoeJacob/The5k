@@ -7,18 +7,20 @@
 
 # Need way of exporting the data from CEA from text file
 
+# Pip install the bellow libraires
+
 # Importing the required libraries
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-from scipy.optimize import curve_fit
-from scipy.interpolate import interp1d
 import math
 
 # Importing the data from text file
 textfile = '/Users/jacobsaunders/Desktop/EngineDev/The5k/natetest.txt'
+
+# Formatting text file
 data = pd.read_csv(textfile, sep='\t', header=None)
-# delete the first 20 rows
+# delete the first 30 rows
 removeStartRows = 30
 data = data.drop(data.index[0:removeStartRows])
 
@@ -27,8 +29,10 @@ data = data.drop(data.index[0:removeStartRows])
 pd.set_option('display.max_rows', None)
 data = data[0].str.split(' ', expand=True)
 
-# Export DataFrame to Excel file
-data.to_excel('output.xlsx', index=False)
+# Export DataFrame to Excel file for testing purposes only
+# data.to_excel('output.xlsx', index=False)
+
+
 # Function to split DataFrame based on starting and finishing characters in Column1
 def split_dataframe(df, start_char, end_char, column_to_split):
     sub_dfs = {}
@@ -207,12 +211,3 @@ df.to_excel('output2.xlsx', index=False)
 # Apply the function to all elements of the DataFrame
 df = df.applymap(custom_float_conversion)
 
-df.plot(x='O/F', y='Isp')
-df.plot(x='O/F', y=['*H_Chamber','*O_Chamber','*H2_Chamber','*O2_Chamber','H2O_Chamber', '*OH_Chamber' ])
-df.plot(x='O/F', y = 'Cstar')
-# Plotting a line plot
-#plt.plot(df['O/F'], df['Isp'])
-#plt.xlabel('X-axis')
-#plt.ylabel('Y-axis')
-#plt.title('Line Plot')
-plt.show()
