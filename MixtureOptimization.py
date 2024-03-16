@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from FlowModel import df
+from CEAParser import df
 
 
 def plot_y_axis(x_axis,y_axis):
