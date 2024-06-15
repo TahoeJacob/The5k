@@ -30,7 +30,7 @@ pd.set_option('display.max_rows', None)
 data = data[0].str.split(' ', expand=True)
 
 # Export DataFrame to Excel file for testing purposes only
-# data.to_excel('output.xlsx', index=False)
+data.to_excel('output.xlsx', index=False)
 
 
 # Function to split DataFrame based on starting and finishing characters in Column1
