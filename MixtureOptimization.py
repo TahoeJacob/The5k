@@ -10,7 +10,7 @@ import scipy.optimize as scipy
 df = pd.read_excel('CEAParsed.xlsx')
 
 # Globals
-univeralGasConstant = 8.31446261815324/0.01360784504 # Specifc gas constant [J/Kmol] (named wrong but cant be arsed to change it)
+univeralGasConstant = 8.31446261815324/0.013551 # Specifc gas constant [J/Kmol] (named wrong but cant be arsed to change it)
 
 # Function to create plots
 def create_plot(x_axis,y_axis, x_label, y_label, title):
@@ -179,7 +179,7 @@ def engine_geometry(gam, P_c, T_c, F_Vac, showPlots):
         # Calculate mass flow rate
         m_dot_array.append(rho_t*V_t*A_t_array[-1])
     
-
+    # Find the area ratio for the RS25 engine
     position_65 = np.where(np.isclose(area_ratio_array, 69.5))[0] # 69.5 is area ratio for RS25 engine select based off new engine design
     print(f'Exit Mach Num: {M_e_array[position_65[0]]} \n Exit Pressure: {P_e_array[position_65[0]]} [Pa] \n Thrust Coefficient: {C_F_array[position_65[0]]} [Pa] \n Throat Area: {A_t_array[position_65[0]]} m2 \n Exit Area: {A_e_array[position_65[0]]} m2 \n Mass Flow Rate: {m_dot_array[position_65[0]]} [Kg/s]')
 
@@ -193,14 +193,42 @@ def engine_geometry(gam, P_c, T_c, F_Vac, showPlots):
     A_c = calc_chamber_area(A_t_array[position_65[0]])
 
     # Determine chamber length
-    L_c = calc_chamber_length(A_c, V_c)
+    L_c = calc_chamber_length(A_c, V_c)*0.0254 # L_c in m
 
-    print(f'Exit Diamter: {2*np.sqrt(A_e_array[position_65[0]]/np.pi)} m \n Throat Diameter {2*np.sqrt(A_t_array[position_65[0]]/np.pi)} m \n Chamber Diameter: {2*np.sqrt(A_c/np.pi)} m \n Chamber Length: {L_c} m \n Chamber Volume: {V_c} m3')
+    # Determine throat area for RS25
+    A_t = A_t_array[position_65[0]]
     
+    # Determine exit area for RS25
+    A_e = A_e_array[position_65[0]]
+
+    print(f'Exit Diamter: {2*A_e/np.pi} m \n Throat Diameter {2*np.sqrt(A_t/np.pi)} m \n Chamber Diameter: {2*np.sqrt(A_c/np.pi)} m \n Chamber Length: {L_c} m \n Chamber Volume: {V_c} m3')
+    
+
+    if showPlots:
+        create_plot(area_ratio_array, M_e_array, 'Area Ratio', 'Exit Mach Number', 'Exit Mach Number vs Area Ratio')
+        create_plot(area_ratio_array, P_e_array, 'Area Ratio', 'Exit Pressure [Pa]', 'Exit Pressure vs Area Ratio')
+        create_plot(area_ratio_array, C_F_array, 'Area Ratio', 'Thrust Coefficient [Pa]', 'Thrust Coefficient vs Area Ratio')
+        create_plot(area_ratio_array, A_t_array, 'Area Ratio', 'Throat Area [m^2]', 'Throat Area vs Area Ratio')
+        create_plot(area_ratio_array, A_e_array, 'Area Ratio', 'Exit Area [m^2]', 'Exit Area vs Area Ratio')
+        create_plot(area_ratio_array, m_dot_array, 'Area Ratio', 'Mass Flow Rate [Kg/s]', 'Mass Flow Rate vs Area Ratio')
+    return (A_c, A_t, A_e, L_c) 
+
+# Function to display engine geometry 
+def display_engine_geometry(x_array, A_c, A_t, A_e, L_c):
+    # Inputs:
+    # x - type: float - distance from injector
+    # A_c - type: float - chamber area [m^2]
+    # A_t - type: float - throat area [m^2]
+    # A_e - type: float - exit area [m^2]
+    # L_c - type: float - chamber length [inch]
+
     # Convert to inch
-    D_c = 2*np.sqrt(A_c/np.pi) *39.3701 # Calculate chamber diameter [m]
-    D_t = 2*np.sqrt(A_t_array[position_65[0]]/np.pi) *39.3701# Calculate throat diameter [m]
-    D_e = 2*np.sqrt(A_e_array[position_65[0]]/np.pi) *39.3701# Calculate exit diameter [m]
+    D_c = 2*np.sqrt(A_c/np.pi)*39.3701 # Calculate chamber diameter [m]
+    D_t = 2*np.sqrt(A_t/np.pi)*39.3701# Calculate throat diameter [m]
+    D_e = 2*np.sqrt(A_e/np.pi)*39.3701# Calculate exit diameter [m]
+
+    # Calculate expansion ratio
+    expansion_ratio = A_e/A_t
 
     # Determine radius of throat in [m]
     R_T = D_t/2
@@ -225,8 +253,6 @@ def engine_geometry(gam, P_c, T_c, F_Vac, showPlots):
     # Calculate length from throat to exit plane
     L = 0.8*(R_T * (np.sqrt(expansion_ratio)-1) + R_U*(1/np.cos(np.deg2rad(alpha-1))))/(np.tan(np.deg2rad(15)))
     #L_N = 0.8 * ((np.sqrt(expansion_ratio)-1)*D_t_inch/2)/(np.tan(np.deg2rad(15)))
-
-    x_array = np.arange(0, 135.5, 0.01) # Distance from injector in inches 135.5
 
     for x in x_array:
         if x <= L_e:
@@ -254,32 +280,122 @@ def engine_geometry(gam, P_c, T_c, F_Vac, showPlots):
             r_t = ((1-t_x)**2)*N_y + 2*(t_x - t_x**2)*Q_y + (t_x**2) * R_E
             r_array.append(r_t)
     
-    create_plot(x_array[:len(r_array)], r_array, 'Distance from Injector [in]', 'Radius [in]', 'Radius vs Distance from Injector')
-    print(len(x_array), len(r_array))
+    # Convert r_array and x_array to meters
+    r_array = np.array(r_array) * 0.0254
+    x_array = np.array(x_array) * 0.0254
+    create_plot(x_array[:len(r_array)], r_array, 'Distance from Injector [m]', 'Radius [m]', 'Radius vs Distance from Injector')
+    return None
 
 
+# Function to calculate raduys of chamber based off x
+def calc_radius(x, A_c, A_t, A_e, L_c):
+    # Inputs:
+    # x - type: float - distance from injector
+    # A_c - type: float - chamber area [m^2]
+    # A_t - type: float - throat area [m^2]
+    # A_e - type: float - exit area [m^2]
+    # L_c - type: float - chamber length [inch]
+
+    # Convert to inch
+    D_c = 2*np.sqrt(A_c/np.pi)*39.3701 # Calculate chamber diameter [m]
+    D_t = 2*np.sqrt(A_t/np.pi)*39.3701# Calculate throat diameter [m]
+    D_e = 2*np.sqrt(A_e/np.pi)*39.3701# Calculate exit diameter [m]
+
+    # Convert L_c to inch
+    L_c = L_c * 39.3701
+
+    # Calculate expansion ratio
+    expansion_ratio = A_e/A_t
+
+    # Determine radius of throat in [m]
+    R_T = D_t/2
+
+    # Define key constants for RS25 engine @TODO need to replace with actual values for own engine
+    L_e = 5.339 # Length before chamber starts contracting [m]
+    theta_1 = 25.4157 # Angle of contraction [degrees]
+    theta_D = 37 # Angle of expansion [degrees]
+    alpha =  5.3738 # half-angle of the nozzle [degrees]
+    #theta_E = 5.3738 # Angle of exit [degrees]
+    R_1 = 1.73921 * R_T # Radius of contraction [m]
+    R_U = 0.494 * R_T # Radius of contraction [m]
+    R_D = 0.2 * R_T # Radius of throat curve [m]
+    R_E = np.sqrt(expansion_ratio)*R_T # Radius of expansion [m]
 
 
-    if showPlots:
-        create_plot(area_ratio_array, M_e_array, 'Area Ratio', 'Exit Mach Number', 'Exit Mach Number vs Area Ratio')
-        create_plot(area_ratio_array, P_e_array, 'Area Ratio', 'Exit Pressure [Pa]', 'Exit Pressure vs Area Ratio')
-        create_plot(area_ratio_array, C_F_array, 'Area Ratio', 'Thrust Coefficient [Pa]', 'Thrust Coefficient vs Area Ratio')
-        create_plot(area_ratio_array, A_t_array, 'Area Ratio', 'Throat Area [m^2]', 'Throat Area vs Area Ratio')
-        create_plot(area_ratio_array, A_e_array, 'Area Ratio', 'Exit Area [m^2]', 'Exit Area vs Area Ratio')
-        create_plot(area_ratio_array, m_dot_array, 'Area Ratio', 'Mass Flow Rate [Kg/s]', 'Mass Flow Rate vs Area Ratio')
-    return x_array, r_array
+    # Calculate length from throat to exit plane
+    L = 0.8*(R_T * (np.sqrt(expansion_ratio)-1) + R_U*(1/np.cos(np.deg2rad(alpha-1))))/(np.tan(np.deg2rad(15)))
+    #L_N = 0.8 * ((np.sqrt(expansion_ratio)-1)*D_t_inch/2)/(np.tan(np.deg2rad(15)))
+     
+    # Constant def
+    m = (R_T + R_U - D_c/2 + R_1 - (R_U+R_1)*np.cos(np.deg2rad(theta_1)))/(L_c - L_e - (R_U + R_1)*np.sin(np.deg2rad(theta_1)))
+    
+    if x <= L_e:
+        r = D_c/2
+    elif (L_e < x) and (x <= L_e + R_1*np.sin(np.deg2rad(theta_1))):
+       
+        r = np.sqrt(R_1**2 - (x-L_e)**2) + D_c/2 - R_1
+    elif (L_e + R_1*np.sin(np.deg2rad(theta_1)) < x) and (x <= L_c - R_U*np.sin(np.deg2rad(theta_1))):
+        r = (m*x + D_c/2 - R_1 + R_1*np.cos(np.deg2rad(theta_1)) - m*(L_e + R_1*np.sin(np.deg2rad(theta_1))))
+    elif (L_c - R_U*np.sin(np.deg2rad(theta_1)) < x) and (x <= L_c):
+        r = -np.sqrt(R_U**2 - (x-L_c)**2) + R_T + R_U
+    elif (L_c < x) and (x <= L_c + R_D*np.sin(np.deg2rad(theta_D))):
+        r = -np.sqrt(R_D**2 - (x - L_c)**2) + R_T + R_D
+    else:
+        # Calculate key constants
+        N_x = R_D * np.cos(np.deg2rad(theta_D) - np.pi/2) 
+        N_y = R_D * np.sin(np.deg2rad(theta_D) - np.pi/2) + R_D + R_T
+        E_x = 0.8*(R_T * (np.sqrt(expansion_ratio)-1) + R_U*(1/np.cos(np.deg2rad(alpha-1))))/(np.tan(np.deg2rad(15))) # 80% Rau nozzle length
+        E_y = R_E # Radius of exit
+        Q_x = (E_y - np.tan(np.deg2rad(alpha))*E_x - N_y + np.tan(np.deg2rad(theta_D))*N_x)/(np.tan(np.deg2rad(theta_D)) - np.tan(np.deg2rad(alpha)))
+        Q_y = (np.tan(np.deg2rad(theta_D))*(D_e/2 - np.tan(np.deg2rad(alpha))*E_x) - np.tan(np.deg2rad(alpha))*(N_y - np.tan(np.deg2rad(theta_D))*N_x))/(np.tan(np.deg2rad(theta_D)) - np.tan(np.deg2rad(alpha)))
+
+        # Calculate t(x)
+        t_x = (-2*Q_x + np.sqrt(4*Q_x**2 - 4*(N_x - x + 15.444)*(-N_x - 2*Q_x + E_x)))/(2*(-N_x - 2*Q_x + E_x))
+        r_t = ((1-t_x)**2)*N_y + 2*(t_x - t_x**2)*Q_y + (t_x**2) * R_E
+        r = r_t
+    return r
+    
+  
+    return r*0.0254 # Return in m 
+
+# Function to calculate the central finite difference
+def central_finite_difference(func, x, h, *args):
+    # Inputs:
+    # func - type: function - function to calculate
+    # x - type: float - x value
+    # h - type: float - step size
+    # args - type: list - arguments to pass to function
+
+    return (func(x+h, *args) - func(x-h, *args))/(2*h)
 
 # Function which outlines ODE for local mach number squarred
-def dN_dx (N, gam, Cp, T, A, dQ_dx, dF_dx, dA_dx):
+def dN_dx (x, y, h, keydata):
     # Inputs:
-    # N - type: float - local mach number squared
-    # gam - type: float - specific heat ratio
-    # Cp - type: float - specific heat at constant pressure
-    # T - type: float - temperature
-    # A - type: float - cross sectional area
-    # dQ_dx - type: float - heat transfer rate
-    # dF_dx - type: float - force rate
-    # dA_dx - type: float - area rate
+    # x - type: float - current distance from injector
+    # y - type: list - dependent variables [N, P, T]
+    # keydata - type: list - key data to pass to ODE solver contains [A_c, A_t, A_e, L_c, gam, Cp]
+
+    # Unpack inputs
+    N = y[0] # Local mach number squared
+    P = y[1] # Local pressure
+    T = y[2] # Local temperature
+
+    # Key data
+    A_c = keydata[0] # Area injector [m^2]
+    A_t = keydata[1] # Area throat [m^2]
+    A_e = keydata[2] # Area exit [m^2]
+    L_c = keydata[3] # Chamber length [inch]
+    gam = keydata[4] # Specific heat ratio
+    Cp = keydata[5]  # Specific heat at constant pressure
+    
+    # Calculate area at x 
+    A = np.pi* (calc_radius(x, A_c, A_t, A_e, L_c))**2
+    dA_dx = (np.pi*calc_radius(x+h, A_c, A_t, A_e, L_c)**2 - np.pi*calc_radius(x-h, A_c, A_t, A_e, L_c)**2)/(2*h)
+
+
+
+    dQ_dx = 0
+    dF_dx = 0
 
 
     dN_dx = ((N/(1-N)) * ((1+gam*N)/(Cp*T)) * dQ_dx  +  (N/(1-N))*((2 + (gam-1)*N)/(univeralGasConstant*T))*dF_dx - (N/(1-N))*((2 + (gam-1)*N)/A)*dA_dx)
@@ -287,54 +403,193 @@ def dN_dx (N, gam, Cp, T, A, dQ_dx, dF_dx, dA_dx):
     return dN_dx
 
 # Function which outlines ODE for local pressure
-def dP_dx (N, gam, Cp, T, A, P, dQ_dx, dF_dx, dA_dx):
-    # Inputs:
-    # N - type: float - local mach number squared
-    # gam - type: float - specific heat ratio
-    # Cp - type: float - specific heat at constant pressure
-    # T - type: float - temperature
-    # A - type: float - cross sectional area
-    # dQ_dx - type: float - heat transfer rate
-    # dF_dx - type: float - force rate
-    # dA_dx - type: float - area rate
+def dP_dx (x, y, h, keydata):
+        # Inputs:
+    # x - type: float - current distance from injector
+    # y - type: list - dependent variables [N, P, T]
+    # keydata - type: list - key data to pass to ODE solver contains [A_c, A_t, A_e, L_c, gam, Cp]
+
+    # Unpack inputs
+    N = y[0] # Local mach number squared
+    P = y[1] # Local pressure
+    T = y[2] # Local temperature
+
+    # Key data
+    A_c = keydata[0] # Area injector [m^2]
+    A_t = keydata[1] # Area throat [m^2]
+    A_e = keydata[2] # Area exit [m^2]
+    L_c = keydata[3] # Chamber length [inch]
+    gam = keydata[4] # Specific heat ratio
+    Cp = keydata[5]  # Specific heat at constant pressure
+    
+    # Calculate area at x 
+    A = np.pi* (calc_radius(x, A_c, A_t, A_e, L_c))**2
+    dA_dx = (np.pi*calc_radius(x+h, A_c, A_t, A_e, L_c)**2 - np.pi*calc_radius(x-h, A_c, A_t, A_e, L_c)**2)/(2*h)
+
+
+    dQ_dx = 0
+    dF_dx = 0
+
 
     dP_dx = (-(P/(1-N))*((gam*N)/(Cp*T))*dQ_dx - (P/(1-N))*((1+ (gam-1)*N)/(univeralGasConstant*T))*dF_dx + (P/(1-N))*((gam*N)/A)*dA_dx)
     return dP_dx
 
 
 # Function which outlines ODE for local temperature
-def dT_dx (N, gam, Cp, T, A, dQ_dx, dF_dx, dA_dx):
-    # Inputs:
-    # N - type: float - local mach number squared
-    # gam - type: float - specific heat ratio
-    # Cp - type: float - specific heat at constant pressure
-    # T - type: float - temperature
-    # A - type: float - cross sectional area
-    # dQ_dx - type: float - heat transfer rate
-    # dF_dx - type: float - force rate
-    # dA_dx - type: float - area rate
+def dT_dx (x, y, h, keydata):
+        # Inputs:
+    # x - type: float - current distance from injector [inch]
+    # y - type: list - dependent variables [N, P, T]
+    # keydata - type: list - key data to pass to ODE solver contains [A_c, A_t, A_e, L_c, gam, Cp]
 
+    # Unpack inputs
+    N = y[0] # Local mach number squared
+    P = y[1] # Local pressure
+    T = y[2] # Local temperature
+
+    # Key data
+    A_c = keydata[0] # Area injector [m^2]
+    A_t = keydata[1] # Area throat [m^2]
+    A_e = keydata[2] # Area exit [m^2]
+    L_c = keydata[3] # Chamber length [m]
+    gam = keydata[4] # Specific heat ratio
+    Cp = keydata[5]  # Specific heat at constant pressure
+    
+    # Calculate area at x 
+    A = np.pi* (calc_radius(x, A_c, A_t, A_e, L_c))**2
+    dA_dx = (np.pi*calc_radius(x+h, A_c, A_t, A_e, L_c)**2 - np.pi*calc_radius(x-h, A_c, A_t, A_e, L_c)**2)/(2*h)
+
+
+    dQ_dx = 0
+    dF_dx = 0
+    
     dT_dx = ( (T/(1-N))*((1-gam*N)/(Cp*T))*dQ_dx - (T/(1-N))*(((gam-1)*N)/(univeralGasConstant*T))*dF_dx + (T/(1-N))*(((gam-1)*N)/A)*dA_dx)
     return dT_dx
 
-def calc_flow_data(x_array, r_array, gam, P_c, T_c, F_Vac):
+# Function which defines derrivatives of ODEs 
+def derivs(x, y, h, keydata):
+    # Inputs
+    # x: Independent variable
+    # y: Dependent variables (list)
+    # h: Step size
+    # keydata: list - key data to pass to ODE solver contains array of radius and specific heat ratio
+    # Outputs
+    # Output k values for RK4 method of length n 
+    k = [] # K values for RK4 method of length n 
+    
+    # ODEs 
+    # dy1/dx 
+    k.append(dN_dx(x, y, h, keydata))
+    
+    #dy2/dx 
+    k.append(dP_dx(x, y, h, keydata))
+
+    #dy3/dx
+    k.append(dT_dx(x, y, h, keydata))
+
+    return k
+
+# RK4 function
+def rk4(x, y, n, h, keydata):
+    # Inputs
+    # x: Independent variable
+    # y: Dependent variables (list)
+    # n: Number of ODEs
+    # h: Step size
+    # m: Iteration counter
+    # keydata: list - key data to pass to ODE solver contains array of radius and specific heat ratio
+    
+    # Outputs
+    k = [] # K values for RK4 method of length n has tuples
+    ym = [0] * len(y) # midpoint values of y
+    ye = [0] * len(y)# endpoint values of y
+    k.append(derivs(x, y, h, keydata))
+    
+    for i in range(n):
+        ym[i] = y[i] + k[0][i]*h/2
+    k.append(derivs(x+h/2, ym, h, keydata))
+    for i in range(n):
+        ym[i] = y[i] + k[1][i]*h/2
+    k.append(derivs(x+h/2, ym, h, keydata))
+    for i in range(n):
+        ye[i] = y[i] + k[2][i]*h
+    
+    k.append(derivs(x+h, ye, h, keydata))
+    for i in range(n):
+        y[i] = y[i] + h*(k[0][i] + 2*(k[1][i] + k[2][i]) + k[3][i])/6
+    x = x+h # increment x by step size
+    return x, y
+
+
+# Function to solve ODEs using RK4 method
+def integrator(x, y, n, h, xend, keydata):
+    # Inputs 
+    # x: Independent variable
+    # y: Dependent variables (list)
+    # n: Number of ODEs
+    # h: Step size
+    # xend: Final value of independent variable
+    # m: Iteration counter
+    # keydata: list - key data to pass to ODE solver contains array of radius and specific heat ratio
+
+    while True:
+        if (xend - x < h):
+            h = xend - x
+        x, y = rk4(x, y, n, h, keydata)
+        if (x >= xend):
+            break
+    return x, y
+
+def calc_flow_data(A_c, A_t, A_e, L_c, gam, Cp, M_c, P_c, T_c, F_Vac):
     #Inputs:
     # x_array - type: array - distance from injector in inches
     # r_array - type: array - radius of chamber at x
     # gam - type: float - specific heat ratio
-    # P_c - type: float - chamber pressure
-    # T_c - type: float - chamber temperature
+    # M_c - type: float - chamber mach number
+    # P_c - type: float - chamber pressure [Pa]
+    # T_c - type: float - chamber temperature [K]
     # F_Vac - type: float - vacuum thrust [N] 
 
-
     # Calculate key flow data Pressure, Temperature, Mach number
+    # Key data
+    keydata = [A_c, A_t, A_e, L_c, gam, Cp] # Key data to pass to ODE solver
 
+    # Will use fourth order runge kutta to solve the following ODEs (worked example in testfile.py)
+    # we will let y be a list of [N, P, T] where N is the local mach number squared, P is the local pressure, T is the local temperature 
+    # Define initial conditions of RK4 algorithm 
+    n = 3 # Number of ODEs 
+    M = 0.2683 # Injector mach number
+    yi = [ M**2, P_c, T_c] # Initial conditions of n dependent variables [N, P, T] remebering N is Mach number squarred
+    xi = 0 # Initial value of independent variable
+    xf = 135.5 # Distance from injector to end of engine in inch (has to be inch for radius function to work)
+    dx = 0.01 # Step size 
+    xout = dx # Output interval
+    x = xi # Working x value (set to initial condition)
+    m = 0 # Iteration counter
+    xp_m = [] # Track all x values through out iteration process
 
-    # Will use fourth order runge kutta to solve the following ODEs 
-
-
-
-
+    yp_m = [] # Copy of y values for all iterations
+    
+    y = yi # working y values
+    
+    while True:
+        xend = x + xout
+        if (xend > xf):
+            xend = xf
+        h = dx
+        x, y = integrator(x, y, n, h, xend, keydata)
+        m += 1 # Increment m as we have integrated 
+        xp_m.append(x)
+        yp_m.append(y.copy())        
+        if (x>=xf):
+            break
+    
+    # # Output results
+    # for i in range(m+1):
+    #    print("x = ", xp_m[i]*0.0254, "y = ", yp_m[i]) 
+    # Create plots of pressure, temperature, mach number
+    print(f'Pressure at end of engine: {yp_m[-1][1]} [Pa] \n Temperature at end of engine: {yp_m[-1][2]} [K] \n Mach number at end of engine: {np.sqrt(yp_m[-1][0])}')
+    create_plot([xp*0.0254 for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
     return None
 
 def main():
@@ -344,15 +599,20 @@ def main():
     showPlots = False
     # Constants
     gam = 1.19346 # Specific heat ratio
-    P_c = 18.79E6 # Chamber pressure in Pascals
-    T_c = 3589 # Chamber temperature in Kelvin
+    M_c = 0.2279 # Injector mach number
+    P_c = 18.23E6 # Chamber pressure in Pascals
+    T_c = 3542 # Chamber temperature in Kelvin
+    Cp = 3.7848E3	 # Specific heat at constant pressure in J/KgK
     F_Vac = 2184076.8131 # Vacuum thrust in lbs 
+    
 
     # Calculate the engine geometry based off CEA data
-    x_array, r_array = engine_geometry(gam, P_c, T_c, F_Vac, showPlots) # returns x_array (inches from injector) and r_array (radius of chamber at x) 
+    A_c, A_t, A_e, L_c = engine_geometry(gam, P_c, T_c, F_Vac, showPlots) # returns x_array (inches from injector) and r_array (radius of chamber at x) 
+
+
 
     # Calculate flow data
-    calc_flow_data(x_array, r_array, gam, P_c, T_c, F_Vac) # returns pressure, temperature, mach number throughout  entire engine
+    calc_flow_data(A_c, A_t, A_e, L_c, gam, Cp, M_c, P_c, T_c, F_Vac) # returns pressure, temperature, mach number throughout  entire engine
 
 
     # result = (df['CF'] * df['Cstar']) / 9.81
