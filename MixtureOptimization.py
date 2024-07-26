@@ -558,7 +558,7 @@ def calc_flow_data(A_c, A_t, A_e, L_c, gam, Cp, M_c, P_c, T_c, F_Vac):
     # we will let y be a list of [N, P, T] where N is the local mach number squared, P is the local pressure, T is the local temperature 
     # Define initial conditions of RK4 algorithm 
     n = 3 # Number of ODEs 
-    M = 0.2683 # Injector mach number
+    M = 0.26415 # Injector mach number
     yi = [ M**2, P_c, T_c] # Initial conditions of n dependent variables [N, P, T] remebering N is Mach number squarred
     xi = 0 # Initial value of independent variable
     xf = 135.5 # Distance from injector to end of engine in inch (has to be inch for radius function to work)
