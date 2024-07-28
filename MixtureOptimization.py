@@ -10,8 +10,8 @@ import scipy.optimize as scipy
 df = pd.read_excel('CEAParsed.xlsx')
 
 # Globals
-univeralGasConstant = 8.31446261815324/0.013551 # Specifc gas constant [J/Kmol] (named wrong but cant be arsed to change it)
-
+Ru = 8.31446261815324 # Univeral gas constant [J/mol*K]
+specificGasConstant = Ru/0.013551 # Specifc gas constant [J/Kmol] (named wrong but cant be arsed to change it)
 # Function to create plots
 def create_plot(x_axis,y_axis, x_label, y_label, title):
     # Inputs:
@@ -171,10 +171,10 @@ def engine_geometry(gam, P_c, T_c, F_Vac, showPlots):
         P_t = calc_nozzle_throat_pressure(P_c, gam)
 
         # Calculate density at throat
-        rho_t = P_t / (univeralGasConstant * T_t)
+        rho_t = P_t / (specificGasConstant * T_t)
 
         # Calculate sonic velocity at throat
-        V_t = np.sqrt(gam * univeralGasConstant * T_t)
+        V_t = np.sqrt(gam * specificGasConstant * T_t)
 
         # Calculate mass flow rate
         m_dot_array.append(rho_t*V_t*A_t_array[-1])
@@ -387,18 +387,14 @@ def dN_dx (x, y, h, keydata):
     L_c = keydata[3] # Chamber length [inch]
     gam = keydata[4] # Specific heat ratio
     Cp = keydata[5]  # Specific heat at constant pressure
-    
+    dF_dx = keydata[6]
+    dQ_dx = keydata[7]
+
     # Calculate area at x 
     A = np.pi* (calc_radius(x, A_c, A_t, A_e, L_c))**2
     dA_dx = (np.pi*calc_radius(x+h, A_c, A_t, A_e, L_c)**2 - np.pi*calc_radius(x-h, A_c, A_t, A_e, L_c)**2)/(2*h)
 
-
-
-    dQ_dx = 0
-    dF_dx = 0
-
-
-    dN_dx = ((N/(1-N)) * ((1+gam*N)/(Cp*T)) * dQ_dx  +  (N/(1-N))*((2 + (gam-1)*N)/(univeralGasConstant*T))*dF_dx - (N/(1-N))*((2 + (gam-1)*N)/A)*dA_dx)
+    dN_dx = ((N/(1-N)) * ((1+gam*N)/(Cp*T)) * dQ_dx  +  (N/(1-N))*((2 + (gam-1)*N)/(specificGasConstant*T))*dF_dx - (N/(1-N))*((2 + (gam-1)*N)/A)*dA_dx)
 
     return dN_dx
 
@@ -421,26 +417,22 @@ def dP_dx (x, y, h, keydata):
     L_c = keydata[3] # Chamber length [inch]
     gam = keydata[4] # Specific heat ratio
     Cp = keydata[5]  # Specific heat at constant pressure
+    dF_dx = keydata[6]
+    dQ_dx = keydata[7]
     
     # Calculate area at x 
     A = np.pi* (calc_radius(x, A_c, A_t, A_e, L_c))**2
     dA_dx = (np.pi*calc_radius(x+h, A_c, A_t, A_e, L_c)**2 - np.pi*calc_radius(x-h, A_c, A_t, A_e, L_c)**2)/(2*h)
 
-
-    dQ_dx = 0
-    dF_dx = 0
-
-
-    dP_dx = (-(P/(1-N))*((gam*N)/(Cp*T))*dQ_dx - (P/(1-N))*((1+ (gam-1)*N)/(univeralGasConstant*T))*dF_dx + (P/(1-N))*((gam*N)/A)*dA_dx)
+    dP_dx = (-(P/(1-N))*((gam*N)/(Cp*T))*dQ_dx - (P/(1-N))*((1+ (gam-1)*N)/(specificGasConstant*T))*dF_dx + (P/(1-N))*((gam*N)/A)*dA_dx)
     return dP_dx
-
 
 # Function which outlines ODE for local temperature
 def dT_dx (x, y, h, keydata):
         # Inputs:
     # x - type: float - current distance from injector [inch]
     # y - type: list - dependent variables [N, P, T]
-    # keydata - type: list - key data to pass to ODE solver contains [A_c, A_t, A_e, L_c, gam, Cp]
+    # keydata - type: list - key data to pass to ODE solver contains A_c, A_t, A_e, L_c, gam, Cp, dF_dx, dQ_dx
 
     # Unpack inputs
     N = y[0] # Local mach number squared
@@ -454,16 +446,18 @@ def dT_dx (x, y, h, keydata):
     L_c = keydata[3] # Chamber length [m]
     gam = keydata[4] # Specific heat ratio
     Cp = keydata[5]  # Specific heat at constant pressure
-    
+    dF_dx = keydata[6]
+    dQ_dx = keydata[7]
+
     # Calculate area at x 
     A = np.pi* (calc_radius(x, A_c, A_t, A_e, L_c))**2
     dA_dx = (np.pi*calc_radius(x+h, A_c, A_t, A_e, L_c)**2 - np.pi*calc_radius(x-h, A_c, A_t, A_e, L_c)**2)/(2*h)
 
 
-    dQ_dx = 0
-    dF_dx = 0
     
-    dT_dx = ( (T/(1-N))*((1-gam*N)/(Cp*T))*dQ_dx - (T/(1-N))*(((gam-1)*N)/(univeralGasConstant*T))*dF_dx + (T/(1-N))*(((gam-1)*N)/A)*dA_dx)
+  
+    
+    dT_dx = ( (T/(1-N))*((1-gam*N)/(Cp*T))*dQ_dx - (T/(1-N))*(((gam-1)*N)/(specificGasConstant*T))*dF_dx + (T/(1-N))*(((gam-1)*N)/A)*dA_dx)
     return dT_dx
 
 # Function which defines derrivatives of ODEs 
@@ -540,7 +534,7 @@ def integrator(x, y, n, h, xend, keydata):
             break
     return x, y
 
-def calc_flow_data(A_c, A_t, A_e, L_c, gam, Cp, M_c, P_c, T_c, F_Vac):
+def calc_flow_data(M_c, P_c, T_c, keydata):
     #Inputs:
     # x_array - type: array - distance from injector in inches
     # r_array - type: array - radius of chamber at x
@@ -549,20 +543,19 @@ def calc_flow_data(A_c, A_t, A_e, L_c, gam, Cp, M_c, P_c, T_c, F_Vac):
     # P_c - type: float - chamber pressure [Pa]
     # T_c - type: float - chamber temperature [K]
     # F_Vac - type: float - vacuum thrust [N] 
+    # dF_dx - type: float - thrust gradient [N/m]
+    # dQ_dx - type: float - heat transfer gradient [W/m]
 
     # Calculate key flow data Pressure, Temperature, Mach number
-    # Key data
-    keydata = [A_c, A_t, A_e, L_c, gam, Cp] # Key data to pass to ODE solver
-
+    
     # Will use fourth order runge kutta to solve the following ODEs (worked example in testfile.py)
     # we will let y be a list of [N, P, T] where N is the local mach number squared, P is the local pressure, T is the local temperature 
     # Define initial conditions of RK4 algorithm 
     n = 3 # Number of ODEs 
-    M = 0.26415 # Injector mach number
-    yi = [ M**2, P_c, T_c] # Initial conditions of n dependent variables [N, P, T] remebering N is Mach number squarred
+    yi = [ M_c**2, P_c, T_c] # Initial conditions of n dependent variables [N, P, T] remebering N is Mach number squarred
     xi = 0 # Initial value of independent variable
-    xf = 135.5 # Distance from injector to end of engine in inch (has to be inch for radius function to work)
-    dx = 0.01 # Step size 
+    xf = 135.5  # Distance from injector to end of engine in inch (has to be inch for radius function to work)
+    dx = 25.19/200 # Step size 
     xout = dx # Output interval
     x = xi # Working x value (set to initial condition)
     m = 0 # Iteration counter
@@ -589,7 +582,190 @@ def calc_flow_data(A_c, A_t, A_e, L_c, gam, Cp, M_c, P_c, T_c, F_Vac):
     #    print("x = ", xp_m[i]*0.0254, "y = ", yp_m[i]) 
     # Create plots of pressure, temperature, mach number
     print(f'Pressure at end of engine: {yp_m[-1][1]} [Pa] \n Temperature at end of engine: {yp_m[-1][2]} [K] \n Mach number at end of engine: {np.sqrt(yp_m[-1][0])}')
-    create_plot([xp*0.0254 for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
+    # create_plot([xp*0.0254 for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
+    return dx, xp_m, yp_m
+
+
+#-------------------------------------------------------------------
+# FUNCTION TO CALCULATE HEAT TRANSFER THROUGH COOLANT CHANNELS
+# ------------------------------------------------------------------
+# Function to calculate gas transport properties 
+def calc_tranport_properties(T, molecules, molecular_mass, molecular_fraction):
+    # Inputs 
+    # T - float - Temperature in K
+    # molecules - array - Array of molecules in combustion gases 
+    # molecular_mass - array - Array of molecular masses of combustion gases in same order as molecules
+    # molecular_fraction - array - Array of molecular fractions of combustion gases in same order as molecules
+
+    # Create dictionary of transport property coefficients for each molecule where b is the low temperature range and r is the high temperature range
+    tranport_coeff_dict = {
+    "bH2": [0.68887644E00, 0.48727168E01, -0.59565053E03, 0.55569577E00, 0.93724945E00, 0.19013311E03, -0.19701961E05, 0.17545108E01],
+    "bO2": [0.61936357E00, -0.44608607E02, -0.13460714E04, 0.19597562E01, 0.81595343E00, -0.34366856E02, 0.22785080E04, 0.10050999E01],
+    "bH2O": [0.78387780E00, -0.38260408E03, 0.49040158E05, 0.85222785E00, 0.15541443E01, 0.66106305E02, 0.55969886E04, -0.39259598E01],
+    "bOH": [0.78530133E00, -0.16524903E03, 0.12621544E05, 0.69788972E00, 0.10657500E01, 0.45300526E02, -0.37257802E04, -0.49894757E00],
+    "bH": [0.58190587E00, 0.46941424E02, -0.68759582E04, 0.91591909E00, 0.58190587E00, 0.46941424E02, -0.68759582E04, 0.43477961E01],
+    "bO": [0.73101989E00, 0.60468346E01, 0.35630372E04, 0.10955772E01, 0.73824503E00, 0.11221345E02, 0.31668244E04, 0.17085307E01],
+
+    "rH2": [0.70504381E00, 0.36287686E02, -0.72255550E04, 0.41921607E00, 0.74368397E00, -0.54941898E03, 0.25676376E06, 0.35553997E01],
+    "rO2": [0.63839563E00, -0.12344438E01, -0.22885810E05, 0.18056937E01, 0.80805788E00, 0.11982181E03, -0.47335931E05, 0.95189193E00],
+    "rH2O": [0.50714993E00, -0.68966913E03, 0.87454750E05, 0.30285155E01, 0.79349503E00, -0.13340063E04, 0.37884327E06, 0.23591474E01],
+    "rOH": [0.58936635E00, -0.36223418E03, 0.23355306E05, 0.22363455E01, 0.58415552E00, -0.87533541E03, 0.20830503E06, 0.35371017E01],
+    "rH": [0.51631898E00, -0.14613202E04, 0.71446141E06, 0.21559015E01, 0.51631898E00, -0.14613202E04, 0.71446141E06, 0.55877786E01],
+    "rO": [0.79832550E00, 0.18039626E03, -0.53243244E05, 0.51131026E00, 0.79819261E00, 0.17970493E03, -0.52900889E05, 0.11797640E01]}
+
+
+    # Array of transport properties of length molecules 
+    viscosity_array = [] # Viscosity of each molecule
+    thermal_conductivity_array = [] # Thermal conductivity of each molecule
+
+    # Calculate the viscosity and thermal conductivity of each molecule
+    for element in molecules:
+        # Extract elements coefficients
+        if T <= 1000:
+            A_visc = tranport_coeff_dict[f'b{element}'][0]
+            B_visc = tranport_coeff_dict[f'b{element}'][1]
+            C_visc = tranport_coeff_dict[f'b{element}'][2]
+            D_visc = tranport_coeff_dict[f'b{element}'][3]
+            A_thermal = tranport_coeff_dict[f'b{element}'][4]
+            B_thermal = tranport_coeff_dict[f'b{element}'][5]
+            C_thermal = tranport_coeff_dict[f'b{element}'][6]
+            D_thermal = tranport_coeff_dict[f'b{element}'][7]
+        else:
+            A_visc = tranport_coeff_dict[f'r{element}'][0]
+            B_visc = tranport_coeff_dict[f'r{element}'][1]
+            C_visc = tranport_coeff_dict[f'r{element}'][2]
+            D_visc = tranport_coeff_dict[f'r{element}'][3]
+            A_thermal = tranport_coeff_dict[f'r{element}'][4]
+            B_thermal = tranport_coeff_dict[f'r{element}'][5]
+            C_thermal = tranport_coeff_dict[f'r{element}'][6]
+            D_thermal = tranport_coeff_dict[f'r{element}'][7]
+
+        # Using the above coefficients calculate the viscosity and thermal conductivity
+        viscosity_array.append(np.exp(A_visc*np.log(T) + (B_visc/T) + (C_visc/(T**2)) + D_visc))
+        thermal_conductivity_array.append(np.exp(A_thermal*np.log(T) + (B_thermal/T) + (C_thermal/(T**2)) + D_thermal))
+    
+    viscocisty_mix = 0 # Viscosity of the mixture
+    thermal_mix = 0 # Thermal conductivity of the mixture
+
+    # Calculate the viscosity and thermal conductivity of the mixture
+    for i in range(len(molecules)):
+
+        visc_den_sum = 0 # sum of viscosity denominator resets every iteration of i
+        therm_den_sum = 0 # sum of thermal conductivity denominator resets every iteration of i
+
+        # Calculate denominator values
+        for j in range(len(molecules)):
+            sigma_ij = 0.25*((1+(viscosity_array[i]/viscosity_array[j])**(0.5) * (molecular_mass[j]/molecular_mass[i])**(0.25))**2) * ((2*molecular_mass[j])/(molecular_mass[i] + molecular_mass[j]))
+            vi_ij = sigma_ij*(1 + ((2.41*(molecular_mass[i]-molecular_mass[j])*(molecular_mass[i] - 0.142*molecular_mass[j])) / (molecular_mass[i] + molecular_mass[j])**2))
+            visc_den_sum += molecular_fraction[j]*sigma_ij
+            therm_den_sum += molecular_fraction[j]*vi_ij
+        
+        viscocisty_mix += (molecular_fraction[i]*viscosity_array[i])/(molecular_fraction[i] + visc_den_sum)
+        thermal_mix += (molecular_fraction[i]*thermal_conductivity_array[i])/(molecular_fraction[i] + therm_den_sum)
+    
+    return viscocisty_mix, thermal_mix
+
+# Function to calculate the specific heat of the gas
+def calc_gas_specific_heat(T, molecules, molecular_mass, molecular_fraction):
+
+
+    # Dictionary containing thermodynamic coefficients for different species of elements, c, b, r for 100 - 700, 700 - 2000, 2000 - 6000 K respectively
+    # Containes coefficients A, B, C, D, E for calculating Cp 
+    thermo_curve_dict = {  
+    "bO2": [-3.425563420E+04, 4.847000970E+02, 1.119010961E+00, 4.293889240E-03, -6.836300520E-07, -2.023372700E-09, 1.039040018E-12 ],
+    "rO2": [-1.037939022E+06, 2.344830282E+03, 1.819732036E+00, 1.267847582E-03, -2.188067988E-07, 2.053719572E-11, -8.193467050E-16],
+    "bOH": [-1.998858990E+03, 9.300136160E+01, 3.050854229E+00, 1.529529288E-03, -3.157890998E-06, 3.315446180E-09, -1.138762683E-12],
+    "rOH": [ 1.017393379E+06, -2.509957276E+03, 5.116547860E+00, 1.305299930E-04, -8.284322260E-08, 2.006475941E-11, -1.556993656E-15],
+    "bO": [-7.953611300E+03, 1.607177787E+02, 1.966226438E+00, 1.013670310E-03, -1.110415423E-06, 6.517507500E-10, -1.584779251E-13],
+    "rO": [ 2.619020262E+05, -7.298722030E+02, 3.317177270E+00, -4.281334360E-04, 1.036104594E-07, -9.438304330E-12, 2.725038297E-16],
+    "bH2O": [-3.947960830E+04, 5.755731020E+02, 9.317826530E-01, 7.222712860E-03, -7.342557370E-06, 4.955043490E-09, -1.336933246E-12],
+    "rH2O": [1.034972096E+06, -2.412698562E+03, 4.646110780E+00, 2.291998307E-03, -6.836830480E-07, 9.426468930E-11, -4.822380530E-15],
+    "bH2": [4.078323210E+04, -8.009186040E+02, 8.214702010E+00, -1.269714457E-02, 1.753605076E-05, -1.202860270E-08, 3.368093490E-12],
+    "rH2": [ 5.608128010E+05, -8.371504740E+02, 2.975364532E+00, 1.252249124E-03, -3.740716190E-07, 5.936625200E-11, -3.606994100E-15],
+    "bH": [0.000000000E+00, 0.000000000E+00, 2.500000000E+00, 0.000000000E+00, 0.000000000E+00, 0.000000000E+00 ,0.000000000E+00],
+    "rH":[6.078774250E+01, -1.819354417E-01, 2.500211817E+00, -1.226512864E-07,  3.732876330E-11,-5.687744560E-15, 3.410210197E-19]}
+
+
+
+    # Calculate the specific heat of gas for each element in the mixture
+    element_Cp = [] # Specific heat of each element in the mixture [J/molK]
+    for element in molecules:
+        # Determine if current temperature is above 1000K as coefficients will change
+        if T >= 1000:
+            a1 = thermo_curve_dict[f'r{element}'][0] # extract a1 
+            a2 = thermo_curve_dict[f'r{element}'][1] # extract a2
+            a3 = thermo_curve_dict[f'r{element}'][2] # extract a3
+            a4 = thermo_curve_dict[f'r{element}'][3] # extract a4
+            a5 = thermo_curve_dict[f'r{element}'][4] # extraft a5
+            a6 = thermo_curve_dict[f'r{element}'][5] # extract a6
+            a7 = thermo_curve_dict[f'r{element}'][6] # extract a7
+        else:
+            a1 = thermo_curve_dict[f'b{element}'][0] # extract a1
+            a2 = thermo_curve_dict[f'b{element}'][1] # extract a2
+            a3 = thermo_curve_dict[f'b{element}'][2] # extract a3
+            a4 = thermo_curve_dict[f'b{element}'][3] # extract a4
+            a5 = thermo_curve_dict[f'b{element}'][4] # extraft a5
+            a6 = thermo_curve_dict[f'r{element}'][5] # extract a6
+            a7 = thermo_curve_dict[f'r{element}'][6] # extract a7
+
+        element_Cp.append((a1*(1/(T**2)) + a2*(1/(T)) + a3 + a4*T + a5*(T**2) + a6*(T**3) + a7*(T**4))*Ru) # Calculate specific heat of element in mixture
+    
+    # Now calculate the specific heat of the mixture
+    Cp_mix = 0 # Specific heat of the mixture [kJ/KgK] 
+    for i in range(len(molecules)):
+        Cp_mix += (molecular_fraction[i]*element_Cp[i]) # Calculate specific heat of mixture in kJ/KgK
+
+    return Cp_mix # Return specific heat of mixture in J/molK
+# Function which outputs chamber inner surface area
+def calc_A_gas(x, y, h, Ncc, keydata):
+    # Inputs
+    # x - type: float - distance from injector
+    # y - type: array - dependent variables [N, P, T]
+    # h - type: float - step size
+    # Ncc - type: float - number of coolant channels
+    # keydata - type: list - key data to pass to ODE solver contains array of radius and specific heat ratio A_c, A_t, A_e, L_c, gam, Cp, dF_dx, dQ_dx
+
+    # Unpack keydata
+    A_c = keydata[0] # Area injector [m^2]
+    A_t = keydata[1] # Area throat [m^2]
+    A_e = keydata[2] # Area exit [m^2]
+    L_c = keydata[3] # Chamber length [inch]
+
+    return (2*np.pi*calc_radius(x,A_c, A_t, A_e, L_c)*h)/Ncc
+
+def calc_h_gas(x, y, h, keydata):
+    # Inputs
+    # x - type: float - distance from injector
+    # y - type: array - dependent variables [N, P, T]
+    # h - type: float - step size
+    # Ncc - type: float - number of coolant channels
+    # keydata - type: list - key data to pass to ODE solver contains array of radius and specific heat ratio A_c, A_t, A_e, L_c, gam, Cp, dF_dx, dQ_dx
+
+    return None
+
+# function which calculates the heat transfer through the walls and coolant channels 
+def calc_heat_transfer(x, y, h, Ncc, keydata):
+    # Inputs
+    # x - type: array - distance from injector
+    # y - type: array - dependent variables [N, P, T]
+    # h - type: float - step size
+    # Ncc - type: float - number of coolant channels
+    # keydata - type: list - key data to pass to ODE solver contains array of radius and specific heat ratio A_c, A_t, A_e, L_c, gam, Cp, dF_dx, dQ_dx
+
+    # Solve for Thw and Tcw using a multivariable newtonian method
+
+
+    # q_gas = h_gas*A_gas*(T_aw - T_hw)
+    # q_H2 = h_H2*A_H2*(Tcw - T_H2)
+    # q_wall = k*A_gas*dT/dy
+
+    A_gas = calc_A_gas(x, y, h, Ncc, keydata)
+
+
+    # Define the functions 
+    # f1 = q_H2 - q_gas 
+    # f2 = q_H2 - q_wall 
+
     return None
 
 def main():
@@ -604,23 +780,57 @@ def main():
     T_c = 3542 # Chamber temperature in Kelvin
     Cp = 3.7848E3	 # Specific heat at constant pressure in J/KgK
     F_Vac = 2184076.8131 # Vacuum thrust in lbs 
-    
+    M_c = 0.26419 # Injector mach number
+    Ncc = 430.0 # Number of coolant channels 
 
     # Calculate the engine geometry based off CEA data
     A_c, A_t, A_e, L_c = engine_geometry(gam, P_c, T_c, F_Vac, showPlots) # returns x_array (inches from injector) and r_array (radius of chamber at x) 
 
+    # Initial conditons for thermal analysis set F and Q to zero for isentropic condition.
+    dF_dx = 0 # Thrust gradient
+    dQ_dx = 0 # Heat transfer gradient 
 
+    # Key data
+    keydata = [A_c, A_t, A_e, L_c, gam, Cp, dF_dx, dQ_dx] # Key data to pass to ODE solver
 
     # Calculate flow data
-    calc_flow_data(A_c, A_t, A_e, L_c, gam, Cp, M_c, P_c, T_c, F_Vac) # returns pressure, temperature, mach number throughout  entire engine
+    dx, xp_m, yp_m = calc_flow_data(M_c, P_c, T_c, keydata) # returns pressure, temperature, mach number throughout  entire engine
+
+    # Calculate heat transfer based off flow data
+    #calc_heat_transfer(xp_m, yp_m, dx, Ncc, keydata)
 
 
-    # result = (df['CF'] * df['Cstar']) / 9.81
-    # create_plot(df['O/F'], df['T_Chamber'], 'O/F', 'T Chamber', 'T Chamber vs O/F')
-    # create_plot(df['O/F'], df['Gamma_Chamber'], 'O/F', 'Gamma Chamber', 'Gamma Chamber vs O/F')
-    # create_plot(df['O/F'], df['Cstar'], 'O/F', 'CStar', 'CStar vs O/F')
-    # create_plot(df['O/F'], df['Isp'], 'O/F', 'Isp', 'Isp vs O/F')
-    # create_plot(df['O/F'], result, 'O/F', 'Isp [Sec]', 'Isp vs O/F')
+    # Test transport propertie stuff
+    # create_plot([xp*0.0254 for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
+    # create_plot([xp*0.0254 for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
+    create_plot([xp*0.0254 for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
+
+
+    molecules = ['H2', 'O2', 'H2O', 'OH', 'H', 'O'] # Molecules in combustion gases
+    molecular_mass = [2.01588E-3, 31.9988E-3, 18.01528E-3, 17.00734E-3, 1.00794E-3, 15.9994E-3] # Molecular masses of combustion gases
+    molecular_fraction = [0.2517, 0.0074, 0.6724, 0.0360, 0.02829, 0.004] # Molecular fractions of combustion gases
+
+    # Calculate transport properties
+    visc = [] # Viscosity of the mixture
+    therm = [] # Thermal conductivity of the mixture
+    for y in yp_m:
+        T = y[2]
+        v, t = calc_tranport_properties(T, molecules, molecular_mass, molecular_fraction)
+        visc.append(v)
+        therm.append(t)
+    create_plot([xp*0.0254 for xp in xp_m], [v*1E-7 for v in visc], "Distance from Injector [m]", "Viscosity [Pa s]", "Viscosity vs Distance from Injector")
+    create_plot([xp*0.0254 for xp in xp_m], [t*1E-4 for t in therm], "Distance from Injector [m]", "Thermal Conductivity [W/mK]", "Thermal Conductivity vs Distance from Injector")
+
+    # Calculate specific heat of gas
+
+    Cp_array = [] # Specific heat of the gas
+    T_array = np.arange(200, 5000, 0.1)
+    for T in T_array:
+       
+        Cp_array.append(calc_gas_specific_heat(T, molecules, molecular_mass, molecular_fraction))
+       
+    create_plot(T_array,  Cp_array, "Temperature [K]", "Specific Heat [J/molK]", "Specific Heat vs Temperature")
+
     plt.show()
 
 main()
