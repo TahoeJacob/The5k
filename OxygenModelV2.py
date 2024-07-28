@@ -218,22 +218,22 @@ def Helmholtz(rho_guess, T, Tc, rho_c, Rs, coefficients):
     alphRDT = calc_alpha_r_delta_tau(tau, delta, coefficients)
 
 
-    # Calculate enthalpy
-    h = (1 + tau*(alpha0T + alphRT) + delta*alphRD) * Rs*T
+    # Calculate enthalpy [kJ/kg]
+    h = (1 + tau*(alpha0T + alphRT) + delta*alphRD) * Rs*T 
 
-    # Calculate pressure
+    # Calculate pressure [Pa]
     P = rho_guess * Rs * T * (1 + delta * alphRD)
 
-    # Calculate entropy
+    # Calculate entropy [kJ/kgK]
     s = (tau*(alpha0T + alphRT) - alph0 - alphR)* Rs 
 
-    # Calculate isochoric heat capactiy [J/kg K]
-    Cv = -(tau**2) * (alph0TT + alphRTT)  
+    # Calculate isochoric heat capactiy [kJ/kg K]
+    Cv = -(tau**2) * (alph0TT + alphRTT)
 
-    # Calculate isobaric heat capactiy [J/kg K]
+    # Calculate isobaric heat capactiy [kJ/kg K]
     Cp = Cv + ((1 + delta*alphRD - delta*tau*alphRDT)**2)/(1 + 2*delta*alphRD + (delta**2) * alphRDD) 
 
-    return [h, P, T, s, rho_guess, Cp, Cv, alphRD, alphRDD, alphRDT, alphRT, alphRTT, alph0, alpha0T, alph0TT, alphR]
+    return [h, P, T, s, rho_guess, Cp*Rs*0.001, Cv*Rs*0.001, alphRD]
 
 def oxygen_debugging(coefficients):
     # Constants
@@ -245,7 +245,8 @@ def oxygen_debugging(coefficients):
     Rs = R / M  # Specific gas constant
 
     # Desired pressure
-    P_desired = 1.25 * Pc
+    # P_desired = 1.25 * Pc
+    P_array = [1.25*Pc]
 
     # Initial guess for rho
     rho_guess = 1200
@@ -255,116 +256,91 @@ def oxygen_debugging(coefficients):
     plot_Cp = []
     plot_h = []
     plot_alpha_r_delta = []
-    plot_alpha_r_delta_delta = []
-    plot_alpha_r_delta_tau = []
-    plot_alpha_r_tau = []
-    plot_alpha0_tau = []
-    plot_alpha0_tau_tau = []
-    plot_alpha_r_tau_tau = []
+    plot_Cv = []
     
     plot_delta = []
+    for P_desired in P_array:
+        for T in range(54, int(6 * Tc) + 1):
 
-    for T in range(54, int(6 * Tc) + 1):
+            # Newton solver at each temperature of interest 
+            error = 999
+            while error > 1E-10:
+            #for i in range(200):
+                helmholtz_output = Helmholtz(rho_guess, T, Tc, rho_c, Rs, coefficients)
 
-        # Newton solver at each temperature of interest 
-        error = 999
-        while error > 1E-10:
-        #for i in range(200):
+                alpha_r_delta = helmholtz_output[7]
+                delta = rho_guess / rho_c
+                P_guess = rho_guess * Rs * T * (1 + delta * alpha_r_delta)
+
+                rho_high = rho_guess + d_rho
+                helmholtz_output = Helmholtz(rho_high, T, Tc, rho_c, Rs, coefficients)
+                alpha_r_delta = helmholtz_output[7]
+                delta = rho_high / rho_c
+                P_guess_high = rho_high * Rs * T * (1 + delta * alpha_r_delta)
+
+                rho_low = rho_guess - d_rho
+                helmholtz_output = Helmholtz(rho_low, T, Tc, rho_c, Rs, coefficients)
+                alpha_r_delta = helmholtz_output[7]
+                delta = rho_low / rho_c
+                P_guess_low = rho_low * Rs * T * (1 + delta * alpha_r_delta)
+
+                derivative = (P_guess_high - P_guess_low) / (2 * d_rho)
+
+                rho_new = rho_guess + (P_desired - P_guess) / derivative
+                error = abs(rho_guess - rho_new)
+                rho_guess = rho_new
+
             helmholtz_output = Helmholtz(rho_guess, T, Tc, rho_c, Rs, coefficients)
+            Cp = helmholtz_output[5]
+            # h, P, T, s, rho_guess, Cp, Cv, alphRD, alphRDD, alphRDT, alphRT, alphRTT, alph0, alpha0T, alph0TT, alphR
+            plot_Cp.append(Cp)
+            plot_T.append(T)
+            plot_h.append(helmholtz_output[0])
+            plot_alpha_r_delta.append(helmholtz_output[7])
+            plot_delta.append(rho_guess)
+            plot_Cv.append(helmholtz_output[6])
 
-            alpha_r_delta = helmholtz_output[7]
-            delta = rho_guess / rho_c
-            P_guess = rho_guess * Rs * T * (1 + delta * alpha_r_delta)
+        plt.figure(1)
+        plt.plot(plot_T, plot_Cp, '-b', linewidth=2)
+        plt.xlabel('Temperature [K]')
+        plt.ylabel('Isobaric Heat Capacity [J/(kg*K)]')
+        plt.title('Isobaric Heat Capacity vs. Temperature')
+        plt.legend(['P=1.25Pc'])
+        plt.grid(True)
+        
 
-            rho_high = rho_guess + d_rho
-            helmholtz_output = Helmholtz(rho_high, T, Tc, rho_c, Rs, coefficients)
-            alpha_r_delta = helmholtz_output[7]
-            delta = rho_high / rho_c
-            P_guess_high = rho_high * Rs * T * (1 + delta * alpha_r_delta)
+        plt.figure(2)
+        plt.plot(plot_T, plot_alpha_r_delta, '-b', linewidth=2)
+        plt.xlabel('Temperature [K]')
+        plt.ylabel(r'$\alpha_\delta^r$')
+        plt.title(r'$\alpha_\delta^r$ vs. Temperature')
+        plt.legend(['P=1.25Pc'])
+        plt.grid(True)
 
-            rho_low = rho_guess - d_rho
-            helmholtz_output = Helmholtz(rho_low, T, Tc, rho_c, Rs, coefficients)
-            alpha_r_delta = helmholtz_output[7]
-            delta = rho_low / rho_c
-            P_guess_low = rho_low * Rs * T * (1 + delta * alpha_r_delta)
+        plt.figure(3)
+        plt.plot(plot_T, plot_h, '-b', linewidth=2)
+        plt.xlabel('Temperature [K]')
+        plt.ylabel('Enthalpy [kJ/kg]')
+        plt.title('Enthalpy [kJ/kg] vs. Temperature')
+        plt.legend(['P=1.25Pc'])
+        plt.grid(True)
 
-            derivative = (P_guess_high - P_guess_low) / (2 * d_rho)
+        plt.figure(4)
+        plt.plot(plot_T, plot_delta, '-b', linewidth=2)
+        plt.xlabel('Reduced Temperature')
+        plt.ylabel('Reduced Density')
+        plt.title('Reduced Density vs. Reduced Temperature')
+        plt.legend(['P=1.25Pc'])
+        plt.grid(True)
 
-            rho_new = rho_guess + (P_desired - P_guess) / derivative
-            error = abs(rho_guess - rho_new)
-            rho_guess = rho_new
+        plt.figure(5)
+        plt.plot(plot_T, plot_Cv, '-b', linewidth=2)
+        plt.xlabel('Temperature [K]')
+        plt.ylabel('Isobaric Heat Capacity [J/(kg*K)]')
+        plt.title('Isobaric Heat Capacity vs. Temperature')
+        plt.legend(['P=1.25Pc'])
+        plt.grid(True)
 
-        helmholtz_output = Helmholtz(rho_guess, T, Tc, rho_c, Rs, coefficients)
-        Cp = helmholtz_output[5]
-        # h, P, T, s, rho_guess, Cp, Cv, alphRD, alphRDD, alphRDT, alphRT, alphRTT, alph0, alpha0T, alph0TT, alphR
-        plot_Cp.append(Cp)
-        plot_T.append(T)
-        plot_h.append(helmholtz_output[0])
-        plot_alpha_r_delta.append(helmholtz_output[7])
-        plot_delta.append(rho_guess)
-        plot_alpha_r_delta_delta.append(helmholtz_output[8])
-        plot_alpha_r_delta_tau.append(helmholtz_output[9])
-        plot_alpha_r_tau.append(helmholtz_output[10])
-        plot_alpha0_tau.append(helmholtz_output[13])
-        plot_alpha0_tau_tau.append(helmholtz_output[14])
-        plot_alpha_r_tau_tau .append(helmholtz_output[11])
-
-    plt.figure(1)
-    plt.plot(plot_T, plot_Cp, '-b', linewidth=2)
-    plt.xlabel('Temperature [K]')
-    plt.ylabel('Isobaric Heat Capacity [kJ/(kg*K)]')
-    plt.title('Isobaric Heat Capacity vs. Temperature')
-    plt.legend(['P=1.25Pc'])
-    plt.grid(True)
-    
-
-    plt.figure(2)
-    plt.plot(plot_T, plot_alpha_r_delta, '-b', linewidth=2)
-    plt.xlabel('Temperature [K]')
-    plt.ylabel(r'$\alpha_\delta^r$')
-    plt.title(r'$\alpha_\delta^r$ vs. Temperature')
-    plt.legend(['P=1.25Pc'])
-    plt.grid(True)
-
-    plt.figure(3)
-    plt.plot(plot_T, plot_h, '-b', linewidth=2)
-    plt.xlabel('Temperature [K]')
-    plt.ylabel('Enthalpy [kJ/kg]')
-    plt.title('Enthalpy [kJ/kg] vs. Temperature')
-    plt.legend(['P=1.25Pc'])
-    plt.grid(True)
-
-    plt.figure(4)
-    plt.plot(plot_T, plot_delta, '-b', linewidth=2)
-    plt.xlabel('Reduced Temperature')
-    plt.ylabel('Reduced Density')
-    plt.title('Reduced Density vs. Reduced Temperature')
-    plt.legend(['P=1.25Pc'])
-    plt.grid(True)
-
-    plt.figure(5)
-    plt.plot(plot_T, plot_alpha_r_delta_delta, '-b', linewidth=2)
-    plt.xlabel('Temperature [K]')
-    plt.ylabel(r'$\alpha_{\delta\delta}^r$')
-    plt.title(r'$\alpha_{\delta\delta}^r$ vs. Temperature')
-    plt.legend(['P=1.25Pc'])
-    plt.grid(True)
-
-    plt.figure(6)
-    plt.plot(plot_T, plot_alpha_r_delta_tau, '-b', linewidth=2)
-    plt.xlabel('Temperature [K]')
-    plt.ylabel(r'$\alpha_{\delta\tau}^r$')
-    plt.title(r'$\alpha_{\delta\tau}^r$ vs. Temperature')
-    plt.legend(['P=1.25Pc'])
-    plt.grid(True)
-
-    plt.figure(7)
-    plt.plot(plot_T, plot_alpha_r_tau, '-b', linewidth=2)
-    plt.xlabel('Temperature [K]')
-    plt.ylabel(r'$\alpha_{\tau}^r$')
-    plt.title(r'$\alpha_{\tau}^r$ vs. Temperature')
-    plt.legend(['P=1.25Pc'])
-    plt.grid(True)
 # Example call to the function
 # coefficients = ...  # Define or load the coefficients
 # oxygen_debugging(coefficients)
