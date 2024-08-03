@@ -237,6 +237,43 @@ def calculateEntropy(T_array, thermoDictionary, b_element, r_element):
 
     return S_T
 
+def calculateCp(T_array, thermoDictionary, b_element, r_element):
+    # Function which calculates the enthalpy of a element based off given temperature range
+    #--------------------------------------------------------------------------------------
+    #Inputs: name - type - desc - units
+    # T_array - array - temperature array - [K]
+    # thermoDictionary - dictionary - dictionary containing thermal coefficients a1-5 & b1-2 - unitless
+    # b_element - string - thermoDictionary elemental b reference - N/A
+    # r_element - string - thermoDictionary elemetnal r reference - N/A
+    #--------------------------------------------------------------------------------------
+    #Outputs: name - type - desc - units
+    # Cp_T - array - array of specific heat capacities of length T_array - [J/kg*K]
+    #--------------------------------------------------------------------------------------
+    bTemp = 1000 # Max temperature before thermal coefficients need to be changed, b for <=1000K & r > 1000K
+    Cp_T = np.zeros(len(T_array)) # Pre-load Cp_T array with zeros to reduce computational load [J/mol*K]
+
+    for i in range(len(T_array)):
+        # Determine if current temperature is above 1000K as coefficients will change
+        if T_array[i] > bTemp:
+            a1 = thermoDictionary[r_element][0]
+            a2 = thermoDictionary[r_element][1]
+            a3 = thermoDictionary[r_element][2]
+            a4 = thermoDictionary[r_element][3]
+            a5 = thermoDictionary[r_element][4]
+            b2 = thermoDictionary[r_element][6]
+        else:
+            a1 = thermoDictionary[b_element][0]
+            a2 = thermoDictionary[b_element][1]
+            a3 = thermoDictionary[b_element][2]
+            a4 = thermoDictionary[b_element][3]
+            a5 = thermoDictionary[b_element][4]
+            b2 = thermoDictionary[b_element][6]
+        
+        # Calculate Cp - based off https://ntrs.nasa.gov/api/citations/19940013151/downloads/19940013151.pdf pg9
+        Cp_T[i] = (a1 + a2*T_array[i] + a3*(T_array[i]**2) + a4*(T_array[i]**3) * a5*(T_array[i]**4)) *Ru 
+    
+    return Cp_T
+
 #ef calculateGibbsEnergy(T, h_T, S_T):
     # Function which calculates the Gibbs Free Energy of a element based off a givent temperature range
     #----------------------------------------------------------------------------------------------------------------------------------------
@@ -768,6 +805,14 @@ def main():
     G_OH_test = calculateGibbsEnergy(T_array,h_OH_test, S_OH_test)
     G_O_test = calculateGibbsEnergy(T_array, h_O_test, S_O_test)
 
+    # Cp values for H2, O2, H2O, H, OH, O
+    Cp_H2 = calculateCp(T_array, thermo_curve_dict, "bH2", "rH2")
+    Cp_O2 = calculateCp(T_array, thermo_curve_dict, "bO2", "rO2")
+    Cp_H2O = calculateCp(T_array, thermo_curve_dict, "bH2O", "rH2O")
+    Cp_H = calculateCp(T_array, thermo_curve_dict, "bH", "rH")
+    Cp_OH = calculateCp(T_array, thermo_curve_dict, "bOH", "rOH")
+    Cp_O = calculateCp(T_array, thermo_curve_dict, "bO", "rO")
+
     x = 2
     y = 1
 
@@ -799,6 +844,11 @@ def main():
     ax.set_ylabel(r'$\log_{10} (K_p)$')
     ax.set_title(r'$\log_{10} (K_p)$ vs Temperature')
     ax.grid()
+
+    fig2 = plt.figure(2)
+    ax2 = fig2.add_subplot(1,1,1)
+
+    ax2.plot(T_array, Cp_H2, linewidth=2.0, label = "H2")
 
     plt.show()
 

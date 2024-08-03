@@ -1,6 +1,6 @@
-# Hydrogen model V2 used to calculate density of liquid Hydrogen
+# Oxygen model V2 used to calculate density of liquid Hydrogen
 # By Jacob Saunders
-# Based off www.cryo-rocket.com section 2.2
+# Based off www.cryo-rocket.com section 2.3
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -231,9 +231,9 @@ def Helmholtz(rho_guess, T, Tc, rho_c, Rs, coefficients):
     Cv = -(tau**2) * (alph0TT + alphRTT)
 
     # Calculate isobaric heat capactiy [kJ/kg K]
-    Cp = Cv + ((1 + delta*alphRD - delta*tau*alphRDT)**2)/(1 + 2*delta*alphRD + (delta**2) * alphRDD) 
+    Cp =  ((1 + delta*alphRD - delta*tau*alphRDT)**2)/(1 + 2*delta*alphRD + (delta**2) * alphRDD) + Cv
 
-    return [h, P, T, s, rho_guess, Cp*Rs*0.001, Cv*Rs*0.001, alphRD]
+    return [h, P, T, s, rho_guess, Cp*Rs*0.001, Cv*Rs*0.001, alphRD, alph0TT, alphRTT, alphRDD, alphRDT]
 
 def oxygen_debugging(coefficients):
     # Constants
@@ -257,6 +257,10 @@ def oxygen_debugging(coefficients):
     plot_h = []
     plot_alpha_r_delta = []
     plot_Cv = []
+    plot_alpha0_tau_tau = []
+    plot_alpha_r_tau_tau = []
+    plot_alpha_r_delta_delta = []
+    plot_alpha_r_delta_tau = []
     
     plot_delta = []
     for P_desired in P_array:
@@ -297,8 +301,12 @@ def oxygen_debugging(coefficients):
             plot_T.append(T)
             plot_h.append(helmholtz_output[0])
             plot_alpha_r_delta.append(helmholtz_output[7])
+            plot_alpha0_tau_tau.append(helmholtz_output[8])
+            plot_alpha_r_tau_tau.append(helmholtz_output[9])
             plot_delta.append(rho_guess)
             plot_Cv.append(helmholtz_output[6])
+            plot_alpha_r_delta_delta.append(helmholtz_output[10])
+            plot_alpha_r_delta_tau.append(helmholtz_output[11])
 
         plt.figure(1)
         plt.plot(plot_T, plot_Cp, '-b', linewidth=2)
@@ -341,6 +349,38 @@ def oxygen_debugging(coefficients):
         plt.legend(['P=1.25Pc'])
         plt.grid(True)
 
+        plt.figure(6)
+        plt.plot(plot_T, plot_alpha0_tau_tau, '-b', linewidth=2)
+        plt.xlabel('Temperature [K]')
+        plt.ylabel('alpha0_tau_tau')
+        plt.title('alpha0_tau_tau vs. Temperature')
+        plt.legend(['P=1.25Pc'])
+        plt.grid(True)
+
+        plt.figure(7)
+        plt.plot(plot_T, plot_alpha_r_tau_tau, '-b', linewidth=2)
+        plt.xlabel('Temperature [K]')
+        plt.ylabel('alpha_r_tau_tau')
+        plt.title('alpha_r_tau_tau vs. Temperature')
+        plt.legend(['P=1.25Pc'])
+        plt.grid(True)
+
+        plt.figure(8)
+        plt.plot(plot_T, plot_alpha_r_delta_delta, '-b', linewidth=2)
+        plt.xlabel('Temperature [K]')
+        plt.ylabel('alpha_r_delta_delta')
+        plt.title('alpha_r_delta_delta vs. Temperature')
+        plt.legend(['P=1.25Pc'])
+        plt.grid(True)
+
+        plt.figure(9)
+        plt.plot(plot_T, plot_alpha_r_delta_tau, '-b', linewidth=2)
+        plt.xlabel('Temperature [K]')
+        plt.ylabel('alpha_r_delta_tau')
+        plt.title('alpha_r_delta_tau vs. Temperature')
+        plt.legend(['P=1.25Pc'])
+        plt.grid(True)
+
 # Example call to the function
 # coefficients = ...  # Define or load the coefficients
 # oxygen_debugging(coefficients)
@@ -348,12 +388,13 @@ def oxygen_debugging(coefficients):
 def main():
     # Call the required function 
     #"n": [1, 0.398377, -1.84616, 0.418347, 0.023706, 0.097717, 0.030179, 0.022734, 0.013573, -0.04053, 0.000545, 0.000511,	2.95E-07, -8.7E-05,	-0.21271, 0.087359, 0.127551, -0.09068, -0.0354, -0.03623, 0.013277, -0.00033, -0.00831, 0.002125, -0.00083, -2.6E-05, 0.0026, 0.009985, 0.0022, 0.025914, -0.12596, 0.147836, -0.01011],
-    #"k": [1, -0.00074, -6.6E-05, 2.50042, -21.4487, 1.01258, -0.94437, 14.5066, 74.9148, 4.14817]
+    #"k": [1, -0.00074, -6.6E-05, 2.50042, -21.4487, 1.01258, -0.94437, 14.5066, 74.9148, 4.14817]}
 
     # Define the coefficients from the oxygen model table 2.3.2 in the book ignore first element place holder to shift dict index by 1
     coeff = {
         "r": [1, 1, 1, 1,	2,	2,	2,	3,	3,	3,6,	7,	7,	8,	1,	1,	2,	2,	3,	3,	5,	6,	7,	8,	10,	2,	3,	3,	4,	4,	5,	5,	5],
         "s": [1, 0, 1.5, 2.5, -0.5, 1.5, 2, 0, 1, 2.5, 0, 2, 5, 2, 5, 6, 3.5, 5.5, 3, 7, 6, 8.5, 4, 6.5, 5.5, 22, 11, 18, 11, 23, 17, 18, 23],  
+    
         "n": [1, 0.3983768749, -0.1846157454E01, 0.4183473197, 0.2370620711E-1, 0.9771730573E-1, 0.3017891294E-1, 0.2273353212E-1, 0.1357254086E-1, -0.4052698943E-1, 0.5454628515E-3, 0.5113182277E-3,	0.2953466883E-6, -0.8687645072E-4,	-0.2127082589, 0.8735941958E-1, 0.1275509190, -0.9067701064E-1, -0.3540084206E-1, -0.3623278059E-1, 0.1327699290E-1, -0.3254111865E-3, -0.8313582932E-2, 0.2124570559E-2, -0.8325206232E-3, -0.2626173276E-4, 0.2599581482E-2, 0.9984649663E-2, 0.2199923153E-2, -0.2591350486E-1, -0.1259630848, 0.1478355637, -0.1011251078E-1],
        
         "k": [1, -0.740775E-3, -0.664930E-4, 2.50042, -0.214487E2, 0.101258E1, -0.944365, 0.145066E2, 74.9148, 4.14817]}

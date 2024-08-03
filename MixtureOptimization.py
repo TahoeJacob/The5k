@@ -26,6 +26,21 @@ def create_plot(x_axis,y_axis, x_label, y_label, title):
     plt.xlabel(f'{x_label}')
     plt.ylabel(f'{y_label}')
     plt.title(f'{title}')
+    #plt.gca().yaxis.set_major_formatter('{:.1e}'.format)
+    stringStart = 'X:{:.2f}, Y:{:.3f}'.format(float(x_axis[0]), float(y_axis[0]))
+    stringEng = 'X:{:.2f}, Y:{:.3f}'.format(float(x_axis[-1]), float(y_axis[-1]))
+    plt.annotate(stringStart,
+                xy=(x_axis[0], y_axis[0]), xycoords="data",
+                xytext=(100,10), textcoords="offset points",
+                va="center", ha="center",
+                bbox=dict(boxstyle="round", fc="w"),
+                arrowprops=dict(arrowstyle="->"))
+    plt.annotate(stringEng,
+                xy=(x_axis[-1], y_axis[-1]), xycoords="data",
+                xytext=(-100,10), textcoords="offset points",
+                va="center", ha="center",
+                bbox=dict(boxstyle="round", fc="w"),
+                arrowprops=dict(arrowstyle="->"))
     plt.grid(True)
 
 # Function to Calculate the mach number at the exit of the nozzle
@@ -613,7 +628,6 @@ def calc_tranport_properties(T, molecules, molecular_mass, molecular_fraction):
     "rH": [0.51631898E00, -0.14613202E04, 0.71446141E06, 0.21559015E01, 0.51631898E00, -0.14613202E04, 0.71446141E06, 0.55877786E01],
     "rO": [0.79832550E00, 0.18039626E03, -0.53243244E05, 0.51131026E00, 0.79819261E00, 0.17970493E03, -0.52900889E05, 0.11797640E01]}
 
-
     # Array of transport properties of length molecules 
     viscosity_array = [] # Viscosity of each molecule
     thermal_conductivity_array = [] # Thermal conductivity of each molecule
@@ -621,7 +635,7 @@ def calc_tranport_properties(T, molecules, molecular_mass, molecular_fraction):
     # Calculate the viscosity and thermal conductivity of each molecule
     for element in molecules:
         # Extract elements coefficients
-        if T <= 1000:
+        if T < 1000:
             A_visc = tranport_coeff_dict[f'b{element}'][0]
             B_visc = tranport_coeff_dict[f'b{element}'][1]
             C_visc = tranport_coeff_dict[f'b{element}'][2]
@@ -655,10 +669,13 @@ def calc_tranport_properties(T, molecules, molecular_mass, molecular_fraction):
 
         # Calculate denominator values
         for j in range(len(molecules)):
-            sigma_ij = 0.25*((1+(viscosity_array[i]/viscosity_array[j])**(0.5) * (molecular_mass[j]/molecular_mass[i])**(0.25))**2) * ((2*molecular_mass[j])/(molecular_mass[i] + molecular_mass[j]))
-            vi_ij = sigma_ij*(1 + ((2.41*(molecular_mass[i]-molecular_mass[j])*(molecular_mass[i] - 0.142*molecular_mass[j])) / (molecular_mass[i] + molecular_mass[j])**2))
-            visc_den_sum += molecular_fraction[j]*sigma_ij
-            therm_den_sum += molecular_fraction[j]*vi_ij
+            if j == i:
+                continue
+            else:
+                sigma_ij = 0.25*((1+(viscosity_array[i]/viscosity_array[j])**(0.5) * (molecular_mass[j]/molecular_mass[i])**(0.25))**2) * ((2*molecular_mass[j])/(molecular_mass[i] + molecular_mass[j]))
+                vi_ij = sigma_ij*(1 + ((2.41*(molecular_mass[i]-molecular_mass[j])*(molecular_mass[i] - 0.142*molecular_mass[j])) / (molecular_mass[i] + molecular_mass[j])**2))
+                visc_den_sum += molecular_fraction[j]*sigma_ij
+                therm_den_sum += molecular_fraction[j]*vi_ij
         
         viscocisty_mix += (molecular_fraction[i]*viscosity_array[i])/(molecular_fraction[i] + visc_den_sum)
         thermal_mix += (molecular_fraction[i]*thermal_conductivity_array[i])/(molecular_fraction[i] + therm_den_sum)
@@ -682,7 +699,7 @@ def calc_gas_specific_heat(T, molecules, molecular_mass, molecular_fraction):
     "rH2O": [1.034972096E+06, -2.412698562E+03, 4.646110780E+00, 2.291998307E-03, -6.836830480E-07, 9.426468930E-11, -4.822380530E-15],
     "bH2": [4.078323210E+04, -8.009186040E+02, 8.214702010E+00, -1.269714457E-02, 1.753605076E-05, -1.202860270E-08, 3.368093490E-12],
     "rH2": [ 5.608128010E+05, -8.371504740E+02, 2.975364532E+00, 1.252249124E-03, -3.740716190E-07, 5.936625200E-11, -3.606994100E-15],
-    "bH": [0.000000000E+00, 0.000000000E+00, 2.500000000E+00, 0.000000000E+00, 0.000000000E+00, 0.000000000E+00 ,0.000000000E+00],
+    "bH": [0.000000000E+00, 0.000000000E+00, 2.500000000E+00, 0.000000000E+00, 0.000000000E+00, 0 ,0.000000000E+00],
     "rH":[6.078774250E+01, -1.819354417E-01, 2.500211817E+00, -1.226512864E-07,  3.732876330E-11,-5.687744560E-15, 3.410210197E-19]}
 
 
@@ -705,11 +722,10 @@ def calc_gas_specific_heat(T, molecules, molecular_mass, molecular_fraction):
             a3 = thermo_curve_dict[f'b{element}'][2] # extract a3
             a4 = thermo_curve_dict[f'b{element}'][3] # extract a4
             a5 = thermo_curve_dict[f'b{element}'][4] # extraft a5
-            a6 = thermo_curve_dict[f'r{element}'][5] # extract a6
-            a7 = thermo_curve_dict[f'r{element}'][6] # extract a7
+            a6 = thermo_curve_dict[f'b{element}'][5] # extract a6
+            a7 = thermo_curve_dict[f'b{element}'][6] # extract a7
 
         element_Cp.append((a1*(1/(T**2)) + a2*(1/(T)) + a3 + a4*T + a5*(T**2) + a6*(T**3) + a7*(T**4))*Ru) # Calculate specific heat of element in mixture
-    
     # Now calculate the specific heat of the mixture
     Cp_mix = 0 # Specific heat of the mixture [kJ/KgK] 
     for i in range(len(molecules)):
@@ -801,27 +817,33 @@ def main():
 
 
     # Test transport propertie stuff
-    # create_plot([xp*0.0254 for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
-    # create_plot([xp*0.0254 for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
-    create_plot([xp*0.0254 for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
+    if showPlots:
+        create_plot([xp*0.0254 for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
+        create_plot([xp*0.0254 for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
+        create_plot([xp*0.0254 for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
 
 
+        molecules = ['H2', 'O2', 'H2O', 'OH', 'H', 'O'] # Molecules in combustion gases
+        molecular_mass = [2.01588E-3, 31.9988E-3, 18.01528E-3, 17.00734E-3, 1.00794E-3, 15.9994E-3] # Molecular masses of combustion gases
+        molecular_fraction = [0.24738, 0.00219, 0.68580, 0.03688, 0.02568, 0.00206] # Molecular fractions of combustion gases
+
+        # Calculate transport properties
+        visc = [] # Viscosity of the mixture
+        therm = [] # Thermal conductivity of the mixture
+        for y in yp_m:
+            T = y[2]
+            v, t = calc_tranport_properties(T, molecules, molecular_mass, molecular_fraction)
+            visc.append(v)
+            therm.append(t)
+        create_plot([xp*0.0254 for xp in xp_m], [v*1E-7 for v in visc], "Distance from Injector [m]", "Viscosity [Pa s]", "Viscosity vs Distance from Injector")
+        create_plot([xp*0.0254 for xp in xp_m], [t*1E-4 for t in therm], "Distance from Injector [m]", "Thermal Conductivity [W/mK]", "Thermal Conductivity vs Distance from Injector")
+
+        print(calc_tranport_properties(3595.63, molecules, molecular_mass, molecular_fraction))
+        print(calc_gas_specific_heat(3595.63, molecules, molecular_mass, molecular_fraction))
+    # Calculate specific heat of gas
     molecules = ['H2', 'O2', 'H2O', 'OH', 'H', 'O'] # Molecules in combustion gases
     molecular_mass = [2.01588E-3, 31.9988E-3, 18.01528E-3, 17.00734E-3, 1.00794E-3, 15.9994E-3] # Molecular masses of combustion gases
-    molecular_fraction = [0.2517, 0.0074, 0.6724, 0.0360, 0.02829, 0.004] # Molecular fractions of combustion gases
-
-    # Calculate transport properties
-    visc = [] # Viscosity of the mixture
-    therm = [] # Thermal conductivity of the mixture
-    for y in yp_m:
-        T = y[2]
-        v, t = calc_tranport_properties(T, molecules, molecular_mass, molecular_fraction)
-        visc.append(v)
-        therm.append(t)
-    create_plot([xp*0.0254 for xp in xp_m], [v*1E-7 for v in visc], "Distance from Injector [m]", "Viscosity [Pa s]", "Viscosity vs Distance from Injector")
-    create_plot([xp*0.0254 for xp in xp_m], [t*1E-4 for t in therm], "Distance from Injector [m]", "Thermal Conductivity [W/mK]", "Thermal Conductivity vs Distance from Injector")
-
-    # Calculate specific heat of gas
+    molecular_fraction = [0.24738, 0.00219, 0.68580, 0.03688, 0.02568, 0.00206] # Molecular fractions of combustion gases
 
     Cp_array = [] # Specific heat of the gas
     T_array = np.arange(200, 5000, 0.1)
@@ -829,8 +851,8 @@ def main():
        
         Cp_array.append(calc_gas_specific_heat(T, molecules, molecular_mass, molecular_fraction))
        
-    create_plot(T_array,  Cp_array, "Temperature [K]", "Specific Heat [J/molK]", "Specific Heat vs Temperature")
-
+    create_plot(T_array,  Cp_array, "Temperature [K]", "Specific Heat [J/KGK]", "Specific Heat vs Temperature")
+   
     plt.show()
 
 main()
