@@ -55,15 +55,24 @@ def paraPercentFunction():
 
     return paraTemp,paraPercent
 
-def calcParaPercent(T):
-    paraTemp, paraPercent = paraPercentFunction()
-    # Function to calculate the percentage of para hydrogen at a given temperature
 
-    # Find the closest temperature in the array
-    closestTemp = min(paraTemp, key=lambda x:abs(x-T))
-    index = paraTemp.index(closestTemp)
+def para_fraction(temperature):
+  """
+  Calculates the para fraction based on the closest temperature input.
 
-    return paraPercent[index]
+  Args:
+    temperature: The input temperature.
+
+  Returns:
+    The para fraction.
+  """
+
+  temperatures = np.array([10, 20, 20.39, 30, 33.1, 40, 50, 60, 70, 80, 90, 100, 120, 150, 200, 250, 298.16, 300, 350, 400, 500])
+  para_percentages = np.array([99.9999, 99.821, 99.789, 97.021, 95.034, 88.727, 77.054, 65.569, 55.991, 48.537, 42.882, 38.62, 32.959, 28.603, 25.974, 25.264, 25.075, 25.072, 25.019, 25.005, 25])
+
+  # Use np.interp for interpolation
+  para_fraction = np.interp(temperature, temperatures, para_percentages)
+  return para_fraction
 
 def create_plot(x_axis,y_axis, x_label, y_label, title):
     # Inputs:
@@ -190,8 +199,11 @@ def calc_alpha0_tau_tau(tau, delta, c, coef):
     # coef: dictionary containing the coefficients for the model
     sumOne = 0
     for k in range(3,len(coef[c+'a'])):
-        sumOne += ( ( (-coef[c+'a'][k] * (coef[c+'b'][k]**2) * np.exp(coef[c+'b'][k]*tau))/(1-np.exp(coef[c+'b'][k]*tau))) - ((coef[c+'a'][k] * (coef[c+'b'][k]**2)* (np.exp(coef[c+'b'][k]*tau)**2) )/((1-np.exp(coef[c+'b'][k]*tau))**2)))
-    return ( -1.5/(tau**2) + sumOne )
+        a = coef[c+'a'][k]
+        b = coef[c+'b'][k]
+        sumOne += ( (a*(b**2)*np.exp(b*tau))/(np.exp(b*tau)-1) - (a*(b**2)*np.exp(2*b*tau))/((np.exp(b*tau)-1)**2) )
+        #sumOne += ( ( (-coef[c+'a'][k] * (coef[c+'b'][k]**2) * np.exp(coef[c+'b'][k]*tau))/(1-np.exp(coef[c+'b'][k]*tau))) - ((coef[c+'a'][k] * (coef[c+'b'][k]**2)* (np.exp(coef[c+'b'][k]*tau)**2) )/((1-np.exp(coef[c+'b'][k]*tau))**2)))
+    return ( -3/(2*tau**2) + sumOne )
 
 def calc_alpha_r_tau_tau(tau, delta, c, coef):
     # Function to calculate the second partial derivative of alpha_r with respect to tau
@@ -207,25 +219,20 @@ def calc_alpha_r_tau_tau(tau, delta, c, coef):
         N = coef[c+'N'][i]
         d = coef[c+'d'][i]
         t = coef[c+'t'][i]
-        gam = coef[c+'gam'][i]
+        gamma = coef[c+'gam'][i]
         phi = coef[c+'phi'][i]
         beta = coef[c+'beta'][i]
         D = coef[c+'D'][i]
 
 
         if i >= 1 and i <= 7:
-            alpha_r_tau_tau = (N * delta**(d) * t * ((t - 1) * tau**(t - 2)))
-            #alpha_r_tau_tau += ( coef[c+'N'][i] * delta**(coef[c+'d'][i]) * tau**(coef[c+'t'][i]-2) * coef[c+'t'][i]  * (coef[c+'t'][i] - 1) )
+            alpha_r_tau_tau += (N * (delta**d) * t * (t - 1) * (tau**(t - 2)) )
         if i >= 8 and i <= 9:
             p = coef[c+'p'][i]
-            alpha_r_tau_tau = (N * (delta**(d)) * np.exp(-delta**(p)) * t * ((t - 1) * tau**(t - 2)))
-            #alpha_r_tau_tau += ( coef[c+'N'][i] * delta**(coef[c+'d'][i]) * tau**(coef[c+'t'][i]-2) * coef[c+'t'][i]  * (coef[c+'t'][i] - 1) * np.exp(-delta**(coef[c+'p'][i])) )
+            alpha_r_tau_tau += N*(delta**d)*t*(tau**(t - 2))*np.exp(-delta**p)*(t - 1)
         if i >= 10 and i <= 14:
+            alpha_r_tau_tau += 2*N*beta*(delta**d)*(tau**t)*np.exp(phi*((D - delta)**2) + beta*((gamma - tau)**2)) + N*(beta**2)*(delta**d)*(tau**t)*np.exp(phi*((D - delta)**2) + beta*((gamma - tau)**2))*((2*gamma - 2*tau)**2) + N*(delta**d)*t*(tau**(t - 2))*np.exp(phi*((D - delta)**2) + beta*((gamma - tau)**2))*(t - 1) - 2*N*beta*(delta**d)*t*(tau**(t - 1))*np.exp(phi*((D - delta)**2) + beta*((gamma - tau)**2))*(2*gamma - 2*tau)
             
-            #alpha_r_tau_tau = (N * delta**(d) * tau**(t-2) * t * np.exp(phi*(delta-D)**2 + beta**2)) * (t-1)
-            #alpha_r_tau_tau = (N*delta**(d)*tau**(t-2)*np.exp(phi*(delta-D)**2 + beta*(tau-gam)**2)) * (4*beta**(2)*tau**(4) - 8*beta**(2)*gam*tau**(3) + (4*beta**(2)*gam**(2) + (4*t + 2)*beta)*tau**(2) - 4*t*beta*gam*tau + t**(2) - t)
-            #alpha_r_tau_tau += ( N * delta**(d) * np.exp(phi*(delta-D)**2 + beta*(tau-gam)**2) ) * (2 * beta *(tau-gam) * (t*tau**(t-1) + 2*beta*tau**(t) * (tau-gam)) + t*(t-1)*tau**(t-2) + 2*beta*((t+1)*tau**(t) - t*gam*tau**(t-1)) ) 
-            alpha_r_tau_tau += ( (coef[c+'N'][i] * delta**(coef[c+'d'][i]) * tau**(coef[c+'t'][i]-2) * np.exp(coef[c+'phi'][i]*(delta-coef[c+'D'][i])**2 + coef[c+'beta'][i]*(tau - coef[c+'gam'][i])**2) ) * ( ( 4 * coef[c+'beta'][i] * (tau**2) * ((tau - coef[c+'gam'][i])**2) * 2*(tau - coef[c+'gam'][i]) ) + ( 2*coef[c+'beta'][i]*(tau**2)*(tau - coef[c+'gam'][i]) ) + (4 * coef[c+'beta'][i]*(tau - coef[c+'gam'][i]) * coef[c+'t'][i] * tau) + (4*(tau**2)*(tau - coef[c+'gam'][i])) + (coef[c+'t'][i]**2) - coef[c+'t'][i] ))
     return alpha_r_tau_tau #+ sumTwo*np.exp(-delta**2) + sumThree*np.exp(-delta**4)
 
 def calc_alpha_r_delta_delta(tau, delta, c, coef):
@@ -240,13 +247,26 @@ def calc_alpha_r_delta_delta(tau, delta, c, coef):
     sumTwo = 0
     sumThree = 0
     for i in range(len(coef[c+'N'])):
+        N = coef[c+'N'][i]
+        d = coef[c+'d'][i]
+        t = coef[c+'t'][i]
+        gamma = coef[c+'gam'][i]
+        phi = coef[c+'phi'][i]
+        beta = coef[c+'beta'][i]
+        D = coef[c+'D'][i]
 
         if i >= 1 and i <= 7:
-            alpha_r_delta_delta += ( coef[c+'N'][i] * delta**(coef[c+'d'][i] - 2) * tau**(coef[c+'t'][i]) * coef[c+'d'][i] * (coef[c+'d'][i] - 1) )
+            alpha_r_delta_delta += ( N * d * (delta**(d-2)) * (tau**t) * (d - 1))
+            #alpha_r_delta_delta += ( coef[c+'N'][i] * delta**(coef[c+'d'][i] - 2) * tau**(coef[c+'t'][i]) * coef[c+'d'][i] * (coef[c+'d'][i] - 1) )
         if i >= 8 and i <= 9:
-            alpha_r_delta_delta += ( coef[c+'N'][i] * tau**(coef[c+'t'][i]) *delta**(coef[c+'d'][i] - 2) * np.exp(-delta**(coef[c+'p'][i])) * (delta**(2*coef[c+'p'][i]) * coef[c+'p'][i]**2 + (-2*coef[c+'d'][i]*coef[c+'p'][i] - coef[c+'p'][i]**2 + coef[c+'p'][i])*delta**(coef[c+'p'][i]) + coef[c+'d'][i]**2 - coef[c+'d'][i] ) )
+            p = coef[c+'p'][i]  
+            alpha_r_delta_delta += ( N*d*(delta**(d - 2))*(tau**t)*np.exp(-delta**p)*(d - 1) + N*(delta**d)*(delta**(2*p - 2))*(p**2)*(tau**t)*np.exp(-delta**p) - 2*N*d*(delta**(d - 1))*(delta**(p - 1))*p*(tau**t)*np.exp(-delta**p) - N*(delta**d)*(delta**(p - 2))*p*(tau**t)*np.exp(-delta**p)*(p - 1)
+ )
+            #alpha_r_delta_delta += ( coef[c+'N'][i] * tau**(coef[c+'t'][i]) *delta**(coef[c+'d'][i] - 2) * np.exp(-delta**(coef[c+'p'][i])) * (delta**(2*coef[c+'p'][i]) * coef[c+'p'][i]**2 + (-2*coef[c+'d'][i]*coef[c+'p'][i] - coef[c+'p'][i]**2 + coef[c+'p'][i])*delta**(coef[c+'p'][i]) + coef[c+'d'][i]**2 - coef[c+'d'][i] ) )
         if i >= 10 and i <= 14:
-            alpha_r_delta_delta += ( coef[c+'N'][i] * delta**(coef[c+'d'][i] - 2) * tau**(coef[c+'t'][i]) * np.exp(coef[c+'phi'][i]*(delta-coef[c+'D'][i])**2 + coef[c+'beta'][i]*(tau - coef[c+'gam'][i])**2) * ( (4*coef[c+'phi'][i]*(delta**2)*((delta-coef[c+'D'][i])**2) * 2*(delta - coef[c+'D'][i]) ) + (4*coef[c+'phi'][i]*(delta-coef[c+'D'][i])*coef[c+'d'][i]*delta) + (2*coef[c+'phi'][i]*(delta-coef[c+'D'][i])*delta**2) + (4*(delta-coef[c+'D'][i])*delta**2) + coef[c+'d'][i]**2 - coef[c+'d'][i] ) )
+            alpha_r_delta_delta += ( 2*N*(delta**d)*phi*(tau**t)*np.exp(phi*((D - delta)**2) + beta*((gamma - tau)**2)) + N*(delta**d)*(phi**2)*(tau**t)*np.exp(phi*((D - delta)**2) + beta*((gamma - tau)**2))*((2*D - 2*delta)**2) + N*d*(delta**(d - 2))*(tau**t)*np.exp(phi*((D - delta)**2) + beta*((gamma - tau)**2))*(d - 1) - 2*N*d*(delta**(d - 1))*phi*(tau**t)*np.exp(phi*((D - delta)**2) + beta*((gamma - tau)**2))*(2*D - 2*delta)
+)
+            #alpha_r_delta_delta += ( coef[c+'N'][i] * delta**(coef[c+'d'][i] - 2) * tau**(coef[c+'t'][i]) * np.exp(coef[c+'phi'][i]*(delta-coef[c+'D'][i])**2 + coef[c+'beta'][i]*(tau - coef[c+'gam'][i])**2) * ( (4*coef[c+'phi'][i]*(delta**2)*((delta-coef[c+'D'][i])**2) * 2*(delta - coef[c+'D'][i]) ) + (4*coef[c+'phi'][i]*(delta-coef[c+'D'][i])*coef[c+'d'][i]*delta) + (2*coef[c+'phi'][i]*(delta-coef[c+'D'][i])*delta**2) + (4*(delta-coef[c+'D'][i])*delta**2) + coef[c+'d'][i]**2 - coef[c+'d'][i] ) )
     
     return alpha_r_delta_delta #+ sumTwo*np.exp(-delta**2) + sumThree*np.exp(-delta**4)
 
@@ -262,12 +282,26 @@ def calc_alpha_r_delta_tau(tau, delta, c, coef):
     sumThree = 0
 
     for i in range(len(coef[c + 'N'])):
+        N = coef[c+'N'][i]
+        d = coef[c+'d'][i]
+        t = coef[c+'t'][i]
+        gamma = coef[c+'gam'][i]
+        phi = coef[c+'phi'][i]
+        beta = coef[c+'beta'][i]
+        D = coef[c+'D'][i]
+
         if i >= 1 and i <= 7:
-            alpha_r_delta_tau += ( coef[c+'N'][i] * delta**(coef[c+'d'][i] -1) * tau**(coef[c+'t'][i] -1) * coef[c+'d'][i] * coef[c+'t'][i] )
+            alpha_r_delta_tau += (N*d*(delta**(d - 1))*t*(tau**(t - 1)))
+            #alpha_r_delta_tau += ( coef[c+'N'][i] * delta**(coef[c+'d'][i] -1) * tau**(coef[c+'t'][i] -1) * coef[c+'d'][i] * coef[c+'t'][i] )
         if i >= 8 and i <= 9:
-            alpha_r_delta_tau += ( coef[c+'N'][i] * delta**(coef[c+'d'][i] -1) * tau**(coef[c+'t'][i] -1) * coef[c+'t'][i] * np.exp(-delta**(coef[c+'p'][i])) * (coef[c+'d'][i] - coef[c+'p'][i]*delta**(coef[c+'p'][i])))
+            p = coef[c+'p'][i]
+            alpha_r_delta_tau += N*d*(delta**(d - 1))*t*(tau**(t - 1))*np.exp(-delta**p) - N*(delta**d)*(delta**(p - 1))*p*t*(tau**(t - 1))*np.exp(-delta**p)
+
+            #alpha_r_delta_tau += ( coef[c+'N'][i] * delta**(coef[c+'d'][i] -1) * tau**(coef[c+'t'][i] -1) * coef[c+'t'][i] * np.exp(-delta**(coef[c+'p'][i])) * (coef[c+'d'][i] - coef[c+'p'][i]*delta**(coef[c+'p'][i])))
         if i >= 10 and i <= 14:
-            alpha_r_delta_tau += (4*tau**(coef[c+'t'][i] -1)*np.exp(coef[c+'phi'][i]*(delta-coef[c+'D'][i])**2 + coef[c+'beta'][i]*(tau - coef[c+'gam'][i])**2) * (coef[c+'phi'][i]*(delta-coef[c+'D'][i])*delta + coef[c+'d'][i]/2)*coef[c+'N'][i] * delta**(coef[c+'d'][i]-1) * (coef[c+'beta'][i]*(tau-coef[c+'gam'][i])*tau + coef[c+'t'][i]/2) )
+            alpha_r_delta_tau += N*d*(delta**(d - 1))*t*(tau**(t - 1))*np.exp(phi*((D - delta)**2) + beta*((gamma - tau)**2)) - N*(delta**d)*phi*t*(tau**(t - 1))*np.exp(phi*((D - delta)**2) + beta*((gamma - tau)**2))*(2*D - 2*delta) - N*beta*d*(delta**(d - 1))*(tau**t)*np.exp(phi*((D - delta)**2) + beta*((gamma - tau)**2))*(2*gamma - 2*tau) + N*beta*(delta**d)*phi*(tau**t)*np.exp(phi*((D - delta)**2) + beta*((gamma - tau)**2))*(2*D - 2*delta)*(2*gamma - 2*tau)
+
+            #alpha_r_delta_tau += (4*tau**(coef[c+'t'][i] -1)*np.exp(coef[c+'phi'][i]*(delta-coef[c+'D'][i])**2 + coef[c+'beta'][i]*(tau - coef[c+'gam'][i])**2) * (coef[c+'phi'][i]*(delta-coef[c+'D'][i])*delta + coef[c+'d'][i]/2)*coef[c+'N'][i] * delta**(coef[c+'d'][i]-1) * (coef[c+'beta'][i]*(tau-coef[c+'gam'][i])*tau + coef[c+'t'][i]/2) )
 
     return alpha_r_delta_tau #+ sumTwo*np.exp(-delta**2) + sumThree*np.exp(-delta**4)
 
@@ -315,8 +349,9 @@ def Helmholtz(rho_guess, T, Tc, rho_c, Rs, c, coefficients):
     alphRT = calc_alpha_r_tau(tau, delta, c, coefficients)
     
     # Calculate alpha_r_tau_tau
-    changeIn = 1E-2
-    alphRTT = (calc_alpha_r(tau+changeIn, delta, c, coefficients) - 2*calc_alpha_r(tau, delta, c, coefficients) + calc_alpha_r(tau-changeIn,delta, c, coefficients))/(changeIn**2)#calc_alpha_r_tau_tau(tau, delta, c, coefficients)
+    alphRTT = calc_alpha_r_tau_tau(tau, delta, c, coefficients)
+    #changeIn = 1E-2
+    #alphRTT = (calc_alpha_r(tau+changeIn, delta, c, coefficients) - 2*calc_alpha_r(tau, delta, c, coefficients) + calc_alpha_r(tau-changeIn,delta, c, coefficients))/(changeIn**2)#calc_alpha_r_tau_tau(tau, delta, c, coefficients)
 
     # Calculate alpha_r_delta_delta
     alphRDD = calc_alpha_r_delta_delta(tau, delta, c, coefficients)
@@ -375,7 +410,7 @@ def hydrogen_debugging(coefficients):
         for T in range(14, int(6 * Tc) + 1):
 
             # For this Temp grab the ortho/para percentage
-            paraPercent = calcParaPercent(T)/100
+            paraPercent = para_fraction(T)/100
 
             # Newton solver at each temperature of interest 
             error = 999
@@ -427,10 +462,11 @@ def hydrogen_debugging(coefficients):
 
         create_plot(plot_T, plot_Cp, 'Temperature [K]', 'Isobaric Heat Capacity [J/(kg*K)]', 'Isobaric Heat Capacity vs. Temperature')
         create_plot(plot_T, plot_Cv, 'Temperature [K]', 'Isochoric Heat Capacity [J/(kg*K)]', 'Isochoric Heat Capacity vs. Temperature')
-        #create_plot(plot_T, plot_alpha_r_delta_delta, 'Temperature [K]', r'$\alpha_{\delta\delta}^r$', r'$\alpha_{\delta\delta}^r$ vs. Temperature')
-        #create_plot(plot_T, plot_alpha_r_delta_tau, 'Temperature [K]', r'$\alpha_{\delta\tau}^r$', r'$\alpha_{\delta\tau}^r$ vs. Temperature')
-        #create_plot(plot_T, plot_alpha_r_tau_tau, 'Temperature [K]', r'$\alpha_{\tau\tau}^r$', r'$\alpha_{\tau\tau}^r$ vs. Temperature')
-        #create_plot(plot_T, plot_alpha0_tau_tau, 'Temperature [K]', r'$\alpha_{\tau\tau}^0$', r'$\alpha_{\tau\tau}^0$ vs. Temperature')
+        create_plot(plot_T, plot_alpha_r_delta_delta, 'Temperature [K]', r'$\alpha_{\delta\delta}^r$', r'$\alpha_{\delta\delta}^r$ vs. Temperature')
+        create_plot(plot_T, plot_alpha_r_delta_tau, 'Temperature [K]', r'$\alpha_{\delta\tau}^r$', r'$\alpha_{\delta\tau}^r$ vs. Temperature')
+        create_plot(plot_T, plot_alpha_r_delta, 'Temperature [K]', r'$\alpha_{\delta}^r$', r'$\alpha_{\delta}^r$ vs. Temperature')
+        create_plot(plot_T, plot_alpha_r_tau_tau, 'Temperature [K]', r'$\alpha_{\tau\tau}^r$', r'$\alpha_{\tau\tau}^r$ vs. Temperature')
+        create_plot(plot_T, plot_alpha0_tau_tau, 'Temperature [K]', r'$\alpha_{\tau\tau}^0$', r'$\alpha_{\tau\tau}^0$ vs. Temperature')
         # plt.figure(3)
         # plt.plot(plot_T, plot_h, '-b', linewidth=2)
         # plt.xlabel('Temperature [K]')
@@ -485,7 +521,7 @@ def main():
     hydrogen_debugging(coeff)
     #paraTemp, paraPercent = paraPercentFunction()
     
-    print(calcParaPercent(150))
+    print(para_fraction(150))
     
     plt.show()
 

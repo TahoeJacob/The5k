@@ -788,7 +788,7 @@ def main():
     # Main function
 
     # Variable to show plots
-    showPlots = False
+    showPlots = True
     # Constants
     gam = 1.19346 # Specific heat ratio
     M_c = 0.2279 # Injector mach number
