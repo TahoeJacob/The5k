@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import scipy.optimize as scipy
+from HydrogenModelV2 import hydrogen_thermodynamics
+from HydrogenModelV2 import para_fraction
 
 # Import formatted data in excel format. Use this to complete data analaysis
 
@@ -196,7 +198,8 @@ def engine_geometry(gam, P_c, T_c, F_Vac, showPlots):
     
     # Find the area ratio for the RS25 engine
     position_65 = np.where(np.isclose(area_ratio_array, 69.5))[0] # 69.5 is area ratio for RS25 engine select based off new engine design
-    print(f'Exit Mach Num: {M_e_array[position_65[0]]} \n Exit Pressure: {P_e_array[position_65[0]]} [Pa] \n Thrust Coefficient: {C_F_array[position_65[0]]} [Pa] \n Throat Area: {A_t_array[position_65[0]]} m2 \n Exit Area: {A_e_array[position_65[0]]} m2 \n Mass Flow Rate: {m_dot_array[position_65[0]]} [Kg/s]')
+    if showPlots:
+        print(f'Exit Mach Num: {M_e_array[position_65[0]]} \n Exit Pressure: {P_e_array[position_65[0]]} [Pa] \n Thrust Coefficient: {C_F_array[position_65[0]]} [Pa] \n Throat Area: {A_t_array[position_65[0]]} m2 \n Exit Area: {A_e_array[position_65[0]]} m2 \n Mass Flow Rate: {m_dot_array[position_65[0]]} [Kg/s]')
 
     # Calculate expansion ratio
     expansion_ratio = A_e_array[position_65[0]]/A_t_array[position_65[0]]
@@ -215,8 +218,8 @@ def engine_geometry(gam, P_c, T_c, F_Vac, showPlots):
     
     # Determine exit area for RS25
     A_e = A_e_array[position_65[0]]
-
-    print(f'Exit Diamter: {2*A_e/np.pi} m \n Throat Diameter {2*np.sqrt(A_t/np.pi)} m \n Chamber Diameter: {2*np.sqrt(A_c/np.pi)} m \n Chamber Length: {L_c} m \n Chamber Volume: {V_c} m3')
+    if showPlots:
+        print(f'Exit Diamter: {2*A_e/np.pi} m \n Throat Diameter {2*np.sqrt(A_t/np.pi)} m \n Chamber Diameter: {2*np.sqrt(A_c/np.pi)} m \n Chamber Length: {L_c} m \n Chamber Volume: {V_c} m3')
     
 
     if showPlots:
@@ -596,7 +599,7 @@ def calc_flow_data(M_c, P_c, T_c, keydata):
     # for i in range(m+1):
     #    print("x = ", xp_m[i]*0.0254, "y = ", yp_m[i]) 
     # Create plots of pressure, temperature, mach number
-    print(f'Pressure at end of engine: {yp_m[-1][1]} [Pa] \n Temperature at end of engine: {yp_m[-1][2]} [K] \n Mach number at end of engine: {np.sqrt(yp_m[-1][0])}')
+    #print(f'Pressure at end of engine: {yp_m[-1][1]} [Pa] \n Temperature at end of engine: {yp_m[-1][2]} [K] \n Mach number at end of engine: {np.sqrt(yp_m[-1][0])}')
     # create_plot([xp*0.0254 for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
     return dx, xp_m, yp_m
 
@@ -604,8 +607,224 @@ def calc_flow_data(M_c, P_c, T_c, keydata):
 #-------------------------------------------------------------------
 # FUNCTION TO CALCULATE HEAT TRANSFER THROUGH COOLANT CHANNELS
 # ------------------------------------------------------------------
+
+# Function to calculate dilute gas component of heat transfer coefficient (Eqtn 2.6.1 from cryo-rocket.com)
+def calc_dilute_gas_component(tau, delta, coef, c):
+    # Inputs
+    # tau | type: float | Desc: reduced temperature T/Tc
+    # delta | type: float | Desc: reduced density rho/rhoc
+    # coef | type: Dictionary | Desc: Dictionary of coefficients for the component
+    # c | type: string | Desc: What type of hydrogen (normal vs para)
+
+    # Outputs:
+    # gamma0 | type: float | Desc: dilute gas component float
+
+    gamma0nummerator = 0 # Initialize gamma0nummerator
+    gamma0denominator = 0 # Initialize gamma0denominator
+
+    # Initialize summation for top of equation
+    for i in range(len(coef[c+'A1'])):
+        #print(c,i,coef[c+'A1'][i])
+        A1 = coef[c+'A1'][i]
+        gamma0nummerator += (A1)*(tau**(i+1))
+
+    for i in range(len(coef[c+'A2'])):
+        #print(i,coef[c+'A2'][i])
+
+        gamma0denominator += coef[c+'A2'][i]*(tau**(i+1))
+        # if c == 'N':
+        #     print(gamma0denominator)
+    return  gamma0nummerator/gamma0denominator
+
+# Function to calculate excess conductivity (Eqtn 2.6.2 from cryo-rocket.com)
+def calc_excess_conductivity(tau, delta, coef, c):
+    # Inputs
+    # tau | type: float | Desc: reduced temperature T/Tc
+    # delta | type: float | Desc: reduced density rho/rhoc
+    # coef | type: Dictionary | Desc: Dictionary of coefficients for the component
+    # c | type: string | Desc: What type of hydrogen (normal vs para)
+
+    # Outputs:
+    # deltaGamma | type: float | Desc: excess conductivity float
+
+    deltaGamma = 0 # Initialize excess conductivity sum tracker
+
+    for i in range(len(coef[c+'B1'])):
+        # print(i,coef[c+'B1'][i], coef[c+'B2'][i])
+        deltaGamma += (coef[c+'B1'][i] + coef[c+'B2'][i] * tau) * (delta**(i+1))
+    return  deltaGamma
+
+# Function to calculate critical enhancement factor (Eqtn 2.6.3 from cryo-rocket.com)
+def calc_critical_enhancement_factor(tau, delta, C1, C2, C3):
+    # Inputs
+    # tau | type: float | Desc: reduced temperature T/Tc
+    # delta | type: float | Desc: reduced density rho/rhoc
+    # coef | type: Dictionary | Desc: Dictionary of coefficients for the component
+    # c | type: string | Desc: What type of hydrogen (normal vs para)
+
+    # Output
+    # gammaC | type: float | Desc: critical enhancement factor float
+
+    
+    delta_rho_c = delta - 1
+    delta_T_c = tau - 1
+
+    gammaC = (C1/(C2 + abs(delta_T_c))) * np.exp(-((C3*delta_rho_c)**2))
+    
+    print(np.exp(-(C3*delta_rho_c)**2))
+    return gammaC
+
+# Function to calculate Normal hydrogen thermal conductivity
+def calc_normal_hydrogen_thermal_conductivity(T, P_desired):
+    # Inputs 
+    # tau | type: float | Desc: reduced temperature T/Tc
+    # P_desired | type: float | Desc: pressure
+
+    # Outputs
+    # gamma_total_normal | type: float | Desc: total thermal conductivity for normal hydrogen
+
+    # #  Define coefficients for thermal conductivity 
+
+    thermal_coef_dict = {
+        'NA1': [-3.40976E-01, 4.58820E+00, -1.45080E+00, 3.26394E-01, 3.16939E-03, 1.90592E-04, -1.13900E-06], # units [W/m*K]
+        'NA2': [1.38497E+02, -2.21878E+01, 4.57151E+00, 1.00000E+00],
+        'NB1': [3.63081E-02, -2.07629E-02, 3.14810E-02, -1.43097E-02, 1.74980E-03],# units [W/m*K]
+        'NB2': [1.83370E-03, -8.86716E-03, 1.58260E-02, -1.06283E-02, 2.80673E-03],# units [W/m*K]
+        }
+
+    Tc = 33.145  # Critical temperature in K
+    rho_c = 31.262 # Critical density in kg/m^3
+    
+    tau = T/Tc # Reduced temperature
+
+    # Constants 
+    C1 = 6.24E-4 # C1 constant
+    C2 = -2.58E-7 # C2 constant
+    C3 = 0.837 # C3 constant
+    rho_initial = 80 # kgm^3
+
+    # Get the density of liquid hydrogen at said temperature and pressure 25% para percent as this calc is for normal hydrogen 
+    h, rho_guess, Cp, Cv = hydrogen_thermodynamics(P_desired, rho_initial, 0.25, T)
+    delta = rho_guess/rho_c # Reduced density
+
+    # Calculate thermal transfer for normal hydrogen
+    gamma0 = calc_dilute_gas_component(tau, delta, thermal_coef_dict, 'N')
+    deltaGamma = calc_excess_conductivity(tau, delta, thermal_coef_dict, 'N')
+    gammaC = calc_critical_enhancement_factor(tau, delta, C1, C2,C3)
+    gamma_total_normal = gamma0 + deltaGamma + gammaC
+
+    return gamma_total_normal
+
+def calc_para_hydrogen_thermal_conductivity(T, P_desired):
+
+
+    thermal_coef_dict = {
+        'PA1': [-1.24500E+00, 3.10212E+02, -3.31004E+02, 2.46016E+02, -6.57810E+01, 1.08260E+01, -5.19659E-01, 1.439790E-02], # units [W/m*K]
+        'PA2': [1.42304E+04, -1.93922E+04, 1.58379E+04, -4.81812E+03, 7.28639E+02, -3.57365E+01, 1],
+        'PB1': [2.65975E-02, -1.33826E-03,  1.30219E-02, -5.67678E-03,  -9.23380E-05],# units [W/m*K]
+        'PB2': [-1.21727E-03, 3.66663E-03, 3.88715E-03, -9.21055E-03, 4.00723E-03],# units [W/m*K]
+        }
+
+    Tc = 32.938  # Critical temperature in K
+    rho_c = 31.323 # Critical density in kg/m^3
+    rho_initial = 80 # G    # Rho guess is 80 kg/m^3 just becuase this works for a wide range of temperatures and pressures
+    tau = T/Tc
+    C1 = 3.57E-4 # C1 Constant para-hydrogen
+    C2 = -2.46E-2 # C2 Constant para-hydrogen
+    C3 = 0.2 # C3 Constant para-hydrogen
+
+    # Get the density of liquid hydrogen at said temperature and pressure  
+    h, rho_guess, Cp, Cv = hydrogen_thermodynamics(P_desired, rho_initial, 1, T) # 100% paraPercent
+    # Using density from above calculate delta and tau
+    delta = rho_guess/rho_c # Reduced density
+    
+
+    # Calculate thermal transfer for para hydrogen
+    gamma0 = calc_dilute_gas_component(tau, delta, thermal_coef_dict, 'P')
+    deltaGamma = calc_excess_conductivity(tau, delta, thermal_coef_dict, 'P')
+    gammaC = calc_critical_enhancement_factor(tau, delta, C1, C2, C3)
+    gamma_total_para = gamma0 + deltaGamma + gammaC
+
+    return gamma_total_para
+
+# Function to calculate hydrogen viscosity
+def calc_hydrogen_viscosity(T, P_desired):
+    # Inputs
+    # T - type: float - Temperature in K
+    # P_desired - type: float - Pressure in Pa
+
+    # Outputs
+    # viscosity - type: float - Viscosity in [Pa*s]
+
+    #Constants
+    rho_initial = 80 # Rho guess is 80 kg/m^3 just becuase this works for a wide range of temperatures and pressures
+
+    # Calculate para percent
+    paraPercent = para_fraction(T)/100
+
+    # Calculate density of hydrogen at said temperature and pressure
+    h, rho_guess, Cp, Cv = hydrogen_thermodynamics(P_desired, rho_initial, paraPercent, T)
+
+
+    rho = rho_guess/1000 # Convert to g/cm^3
+
+    # Constants
+    C1 = 8.5558
+    C2 = 650.39
+    C3 = 1175.9
+    C4 = 19.55
+
+    # Calculate eta_0
+    eta_0 = C1 * (T**(3/2)) / (T + C4) * (T + C2) / (T + C3)
+
+    # Calculate A using equation (2.6.10)
+    A = np.exp(5.7694 + np.log(rho) + 65*rho**(3/2) - 6e-6 * np.exp(127.2*rho))
+
+    # Calculate B using equation (2.6.11)
+    B = 10 + 7.2 * ((rho / 0.07)**6 - (rho / 0.07)**(3/2)) - 17.63 * np.exp(-58.75 * (rho / 0.07)**3)
+
+    # Calculate delta_eta using equation (2.6.8)
+    delta_eta = A * np.exp(B / T)
+
+    # Calculate eta_tot using equation (2.6.9)
+    eta_tot = (eta_0 + delta_eta) * 1e-7
+
+    return eta_tot
+
+# Function to calculate liquid transport properties of hydrogen
+def calc_liquid_hydrogen_transport_properties(T, P_desired):
+    # Inputs
+    # T - type: float - Temperature in K
+    # P_desired - type: float - Pressure in Pa
+
+    # Outputs
+    # thermal_conductivity - type: float - Thermal Conductivity in [W/m*K]
+    # viscosity - type: float - Viscosity in [Pa*s]
+
+    # Calculate normal hydrogen thermal conductivity
+    gamma_total_normal = calc_normal_hydrogen_thermal_conductivity(T, P_desired)
+    
+    # Calculate para hydrogen thermal conductivity
+    gamma_total_para = calc_para_hydrogen_thermal_conductivity(T, P_desired)
+    
+    # Calculate ortho thermal conductivity
+    gamma_total_ortho = (gamma_total_normal - 0.25* gamma_total_para)/0.75
+    
+    # Calculate para percent at current temperature
+    paraPercent = para_fraction(T)/100
+
+    # Calculate total thermal conductivity for entire mixture
+    thermal_conductivity = paraPercent*gamma_total_para + (1-paraPercent)*gamma_total_ortho
+    
+    # Calculate viscosity
+    viscosity = calc_hydrogen_viscosity(T, P_desired)
+    print("Visc", viscosity)
+
+
+    return thermal_conductivity, gamma_total_normal, gamma_total_para, viscosity
+
 # Function to calculate gas transport properties 
-def calc_tranport_properties(T, molecules, molecular_mass, molecular_fraction):
+def calc_gas_tranport_properties(T, molecules, molecular_mass, molecular_fraction):
     # Inputs 
     # T - float - Temperature in K
     # molecules - array - Array of molecules in combustion gases 
@@ -732,6 +951,7 @@ def calc_gas_specific_heat(T, molecules, molecular_mass, molecular_fraction):
         Cp_mix += (molecular_fraction[i]*element_Cp[i]) # Calculate specific heat of mixture in kJ/KgK
 
     return Cp_mix # Return specific heat of mixture in J/molK
+
 # Function which outputs chamber inner surface area
 def calc_A_gas(x, y, h, Ncc, keydata):
     # Inputs
@@ -788,7 +1008,7 @@ def main():
     # Main function
 
     # Variable to show plots
-    showPlots = True
+    showPlots = False
     # Constants
     gam = 1.19346 # Specific heat ratio
     M_c = 0.2279 # Injector mach number
@@ -817,11 +1037,11 @@ def main():
 
 
     # Test transport propertie stuff
+    
+    create_plot([xp*0.0254 for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
+    create_plot([xp*0.0254 for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
+    create_plot([xp*0.0254 for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
     if showPlots:
-        create_plot([xp*0.0254 for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
-        create_plot([xp*0.0254 for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
-        create_plot([xp*0.0254 for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
-
 
         molecules = ['H2', 'O2', 'H2O', 'OH', 'H', 'O'] # Molecules in combustion gases
         molecular_mass = [2.01588E-3, 31.9988E-3, 18.01528E-3, 17.00734E-3, 1.00794E-3, 15.9994E-3] # Molecular masses of combustion gases
@@ -832,27 +1052,27 @@ def main():
         therm = [] # Thermal conductivity of the mixture
         for y in yp_m:
             T = y[2]
-            v, t = calc_tranport_properties(T, molecules, molecular_mass, molecular_fraction)
+            v, t = calc_gas_tranport_properties(T, molecules, molecular_mass, molecular_fraction)
             visc.append(v)
             therm.append(t)
         create_plot([xp*0.0254 for xp in xp_m], [v*1E-7 for v in visc], "Distance from Injector [m]", "Viscosity [Pa s]", "Viscosity vs Distance from Injector")
         create_plot([xp*0.0254 for xp in xp_m], [t*1E-4 for t in therm], "Distance from Injector [m]", "Thermal Conductivity [W/mK]", "Thermal Conductivity vs Distance from Injector")
 
-        print(calc_tranport_properties(3595.63, molecules, molecular_mass, molecular_fraction))
+        print(calc_gas_tranport_properties(3595.63, molecules, molecular_mass, molecular_fraction))
         print(calc_gas_specific_heat(3595.63, molecules, molecular_mass, molecular_fraction))
-    # Calculate specific heat of gas
-    molecules = ['H2', 'O2', 'H2O', 'OH', 'H', 'O'] # Molecules in combustion gases
-    molecular_mass = [2.01588E-3, 31.9988E-3, 18.01528E-3, 17.00734E-3, 1.00794E-3, 15.9994E-3] # Molecular masses of combustion gases
-    molecular_fraction = [0.24738, 0.00219, 0.68580, 0.03688, 0.02568, 0.00206] # Molecular fractions of combustion gases
+        # Calculate specific heat of gas
+        molecules = ['H2', 'O2', 'H2O', 'OH', 'H', 'O'] # Molecules in combustion gases
+        molecular_mass = [2.01588E-3, 31.9988E-3, 18.01528E-3, 17.00734E-3, 1.00794E-3, 15.9994E-3] # Molecular masses of combustion gases
+        molecular_fraction = [0.24738, 0.00219, 0.68580, 0.03688, 0.02568, 0.00206] # Molecular fractions of combustion gases
 
-    Cp_array = [] # Specific heat of the gas
-    T_array = np.arange(200, 5000, 0.1)
-    for T in T_array:
+        Cp_array = [] # Specific heat of the gas
+        T_array = np.arange(200, 5000, 0.1)
+        for T in T_array:
        
-        Cp_array.append(calc_gas_specific_heat(T, molecules, molecular_mass, molecular_fraction))
+            Cp_array.append(calc_gas_specific_heat(T, molecules, molecular_mass, molecular_fraction))
        
-    create_plot(T_array,  Cp_array, "Temperature [K]", "Specific Heat [J/KGK]", "Specific Heat vs Temperature")
-   
+        create_plot(T_array,  Cp_array, "Temperature [K]", "Specific Heat [J/KGK]", "Specific Heat vs Temperature")
+
     plt.show()
 
 main()

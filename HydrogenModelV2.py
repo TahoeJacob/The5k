@@ -388,7 +388,7 @@ def hydrogen_debugging(coefficients):
 
     # Desired pressure
     # P_desired = 1.25 * Pc
-    P_array = [ 2*Pc]
+    P_array = [ 0.2E6]
 
     # Initial guess for rho
     rho_guesses = [80]  # initial guess for density [kg/m^3]
@@ -399,6 +399,7 @@ def hydrogen_debugging(coefficients):
         plot_T = []
         plot_Cp = []
         plot_h = []
+        plot_rho = []
         plot_alpha_r_delta = []
         plot_alpha_r_delta_delta = []
         plot_alpha_r_delta_tau = []
@@ -451,6 +452,7 @@ def hydrogen_debugging(coefficients):
             # h, P, T, s, rho_guess, Cp, Cv, alphRD, alphRDD, alphRDT, alphRT, alphRTT, alph0, alpha0T, alph0TT, alphR
             plot_Cp.append(Cp)
             plot_T.append(T)
+            plot_rho.append(rho_guess)
             plot_h.append(helmholtz_output_para[0]*paraPercent + helmholtz_output_ortho[0]*(1-paraPercent))
             plot_alpha_r_delta.append(helmholtz_output_para[7]*paraPercent + helmholtz_output_ortho[7]*(1-paraPercent) )
             plot_delta.append(rho_guess)
@@ -459,14 +461,16 @@ def hydrogen_debugging(coefficients):
             plot_alpha_r_delta_tau.append(helmholtz_output_para[8]*paraPercent + helmholtz_output_ortho[8]*(1-paraPercent))
             plot_alpha_r_tau_tau.append(helmholtz_output_para[11]*paraPercent + helmholtz_output_ortho[11]*(1-paraPercent))
             plot_alpha0_tau_tau.append(helmholtz_output_para[10]*paraPercent + helmholtz_output_ortho[10]*(1-paraPercent))
-
+        
+  
         create_plot(plot_T, plot_Cp, 'Temperature [K]', 'Isobaric Heat Capacity [J/(kg*K)]', 'Isobaric Heat Capacity vs. Temperature')
         create_plot(plot_T, plot_Cv, 'Temperature [K]', 'Isochoric Heat Capacity [J/(kg*K)]', 'Isochoric Heat Capacity vs. Temperature')
-        create_plot(plot_T, plot_alpha_r_delta_delta, 'Temperature [K]', r'$\alpha_{\delta\delta}^r$', r'$\alpha_{\delta\delta}^r$ vs. Temperature')
-        create_plot(plot_T, plot_alpha_r_delta_tau, 'Temperature [K]', r'$\alpha_{\delta\tau}^r$', r'$\alpha_{\delta\tau}^r$ vs. Temperature')
-        create_plot(plot_T, plot_alpha_r_delta, 'Temperature [K]', r'$\alpha_{\delta}^r$', r'$\alpha_{\delta}^r$ vs. Temperature')
-        create_plot(plot_T, plot_alpha_r_tau_tau, 'Temperature [K]', r'$\alpha_{\tau\tau}^r$', r'$\alpha_{\tau\tau}^r$ vs. Temperature')
-        create_plot(plot_T, plot_alpha0_tau_tau, 'Temperature [K]', r'$\alpha_{\tau\tau}^0$', r'$\alpha_{\tau\tau}^0$ vs. Temperature')
+        create_plot(plot_T, plot_rho, 'Temperature [K]', 'Density [kg/m^3]', 'Denisty vs. Temperature')
+        # create_plot(plot_T, plot_alpha_r_delta_delta, 'Temperature [K]', r'$\alpha_{\delta\delta}^r$', r'$\alpha_{\delta\delta}^r$ vs. Temperature')
+        # create_plot(plot_T, plot_alpha_r_delta_tau, 'Temperature [K]', r'$\alpha_{\delta\tau}^r$', r'$\alpha_{\delta\tau}^r$ vs. Temperature')
+        # create_plot(plot_T, plot_alpha_r_delta, 'Temperature [K]', r'$\alpha_{\delta}^r$', r'$\alpha_{\delta}^r$ vs. Temperature')
+        # create_plot(plot_T, plot_alpha_r_tau_tau, 'Temperature [K]', r'$\alpha_{\tau\tau}^r$', r'$\alpha_{\tau\tau}^r$ vs. Temperature')
+        # create_plot(plot_T, plot_alpha0_tau_tau, 'Temperature [K]', r'$\alpha_{\tau\tau}^0$', r'$\alpha_{\tau\tau}^0$ vs. Temperature')
         # plt.figure(3)
         # plt.plot(plot_T, plot_h, '-b', linewidth=2)
         # plt.xlabel('Temperature [K]')
@@ -484,17 +488,19 @@ def hydrogen_debugging(coefficients):
         # plt.legend(['P=1.25Pc'])
         # plt.grid(True)
 
-# Example call to the function
-# coefficients = ...  # Define or load the coefficients
-# oxygen_debugging(coefficients)
 
-def main():
-    # Call the required function 
-    #"n": [1, 0.398377, -1.84616, 0.418347, 0.023706, 0.097717, 0.030179, 0.022734, 0.013573, -0.04053, 0.000545, 0.000511,	2.95E-07, -8.7E-05,	-0.21271, 0.087359, 0.127551, -0.09068, -0.0354, -0.03623, 0.013277, -0.00033, -0.00831, 0.002125, -0.00083, -2.6E-05, 0.0026, 0.009985, 0.0022, 0.025914, -0.12596, 0.147836, -0.01011],
-    #"k": [1, -0.00074, -6.6E-05, 2.50042, -21.4487, 1.01258, -0.94437, 14.5066, 74.9148, 4.14817]
+def hydrogen_thermodynamics(P_desired, rho_guess, paraPercent, T):
+    # Constants
+    Tc = 32.938  # H2 critical temperature [K]
+    Pc = 1.284E6  # H2 critical pressure [Pa]
+    rho_c = 31.262  # critical density [kg/m^3]
+    M = 2.016  # H2 molecular weight [g/mol]
+    R = 8314.472  # universal gas constant
+    Rs = R / M  # Specific gas constant
+    d_rho = 0.0001  # delta rho used for derivative
 
     # Define the coefficients from the oxygen model table 2.3.2 in the book ignore first element place holder to shift dict index by 1
-    coeff = {
+    coefficients = {
         "Pa": [1000000, -1.4485891134, 1.884521239, 4.30256, 13.0289, -47.7365, 50.0013, -18.6261, 0.993973, 0.536078],
         "Pb": [1000000, 0, 0, -15.1496751472, -25.0925982148,  -29.4735563787,-35.4059141417, -40.724998482, -163.7925799988, -309.2173173842],
         "Oa": [1000000, -1.4675442336, 1.8845068862,2.54151, -2.3661,  1.00365,  1.22447],
@@ -517,11 +523,72 @@ def main():
         "Obeta": [1000000, 0,0,0,0,0,0,0,0,0, -0.4555,  -0.4046,  -0.0869, -0.4415,  -0.5743],
         "Ophi": [1000000, 0,0,0,0,0,0,0,0,0,  -1.169,  -0.894,  -0.04, -2.072,  -1.306]}
 
+    # Newton solver at each temperature of interest 
+    error = 999
+    while error > 0.01:
+    #for i in range(200):
+        helmholtz_output_para = Helmholtz(rho_guess, T, Tc, rho_c, Rs, 'P', coefficients)
+        helmholtz_output_ortho = Helmholtz(rho_guess, T, Tc, rho_c, Rs, 'O', coefficients)
+        
+        alpha_r_delta = helmholtz_output_para[7]*paraPercent + helmholtz_output_ortho[7]*(1-paraPercent)
+        delta = rho_guess / rho_c
+        P_guess = rho_guess * Rs * T * (1 + delta * alpha_r_delta)
 
-    hydrogen_debugging(coeff)
+        rho_high = rho_guess + d_rho
+        helmholtz_output_para = Helmholtz(rho_high, T, Tc, rho_c, Rs, 'P', coefficients)
+        helmholtz_output_ortho = Helmholtz(rho_high, T, Tc, rho_c, Rs, 'O', coefficients)
+        alpha_r_delta = helmholtz_output_para[7]*paraPercent + helmholtz_output_ortho[7]*(1-paraPercent)
+        delta = rho_high / rho_c
+        P_guess_high = rho_high * Rs * T * (1 + delta * alpha_r_delta)
+
+        rho_low = rho_guess - d_rho
+        helmholtz_output_para = Helmholtz(rho_low, T, Tc, rho_c, Rs, 'P', coefficients)
+        helmholtz_output_ortho = Helmholtz(rho_low, T, Tc, rho_c, Rs, 'O', coefficients)
+        alpha_r_delta = helmholtz_output_para[7]*paraPercent + helmholtz_output_ortho[7]*(1-paraPercent)
+        delta = rho_low / rho_c
+        P_guess_low = rho_low * Rs * T * (1 + delta * alpha_r_delta)
+
+        derivative = (P_guess_high - P_guess_low) / (2 * d_rho)
+
+        rho_new = rho_guess + (P_desired - P_guess) / derivative
+        error = abs(rho_guess - rho_new)
+        rho_guess = rho_new
+        
+
+    helmholtz_output_para = Helmholtz(rho_guess, T, Tc, rho_c, Rs, 'P', coefficients)
+    helmholtz_output_ortho = Helmholtz(rho_guess, T, Tc, rho_c, Rs, 'O', coefficients)
+    Cp = helmholtz_output_para[5]*paraPercent + helmholtz_output_ortho[5]*(1-paraPercent)   # Specific heat at constant pressure [kJ/(kg*K)]
+    Cv = helmholtz_output_para[6]*paraPercent + helmholtz_output_ortho[6]*(1-paraPercent)   # Specific heat at constant volume [kJ/(kg*K)]
+    h = helmholtz_output_para[0]*paraPercent + helmholtz_output_ortho[0]*(1-paraPercent)    # Enthalpy [kJ/kg]
+    #S = helmholtz_output_para[3]*paraPercent + helmholtz_output_ortho[3]*(1-paraPercent)    # Entropy [kJ/(kg * K)]
+    
+
+    return [h, rho_guess, Cp, Cv]
+
+def main():
+    # Call the required function 
+    #"n": [1, 0.398377, -1.84616, 0.418347, 0.023706, 0.097717, 0.030179, 0.022734, 0.013573, -0.04053, 0.000545, 0.000511,	2.95E-07, -8.7E-05,	-0.21271, 0.087359, 0.127551, -0.09068, -0.0354, -0.03623, 0.013277, -0.00033, -0.00831, 0.002125, -0.00083, -2.6E-05, 0.0026, 0.009985, 0.0022, 0.025914, -0.12596, 0.147836, -0.01011],
+    #"k": [1, -0.00074, -6.6E-05, 2.50042, -21.4487, 1.01258, -0.94437, 14.5066, 74.9148, 4.14817]
+
+    
+
+
+    #hydrogen_debugging(coeff)
+
+    # Call the required function
+    P_desired = 2.568E6 # Pa
+    T = 38 # K
+    rho_guess = 40 # kg/m^3
+
+    # For this Temp grab the ortho/para percentage
+    paraPercent = para_fraction(T)/100
+
+    h, rho, Cp, Cv = hydrogen_thermodynamics(P_desired, rho_guess, paraPercent, T)
+
+    # print(f'Temperature: {T} K \n Pressure: {P_desired} Pa \n Density: {rho} kg/m^3 \n Enthalpy: {h} kJ/kg  \n Isobaric Heat Capacity: {Cp} kJ/(kg*K) \n Isochoric Heat Capacity: {Cv} kJ/(kg*K)')
     #paraTemp, paraPercent = paraPercentFunction()
     
-    print(para_fraction(150))
+    # print(para_fraction(150))
     
     plt.show()
 
