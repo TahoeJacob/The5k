@@ -135,11 +135,19 @@ def calc_chamber_length(A_c, V_c):
 
 # Function which calculates general engine geometry based off CEA data
 def engine_geometry(gam, P_c, T_c, F_Vac, showPlots):
-    # Calculate the geometry of a rocket engine based off key parameters from CEA
-    # Inputs:
-    # df - type: data frame - dataframe containing the CEA data
-    
+    """
+    Calculate the geometry of a rocket engine based on key parameters from CEA.
 
+    Parameters:
+    gam (float): Specific heat ratio.
+    P_c (float): Chamber pressure.
+    T_c (float): Chamber temperature.
+    F_Vac (float): Vacuum thrust.
+    showPlots (bool): Flag to indicate whether to show plots.
+
+    Returns:
+    tuple: A tuple containing the chamber area, throat area, exit area, and chamber length units in [m].
+    """
 
     # create area_ratio_array from 2 to 80 in steps of 0.1
     area_ratio_array = np.arange(1.1, 80, 0.1)
@@ -304,20 +312,19 @@ def display_engine_geometry(x_array, A_c, A_t, A_e, L_c):
     create_plot(x_array[:len(r_array)], r_array, 'Distance from Injector [m]', 'Radius [m]', 'Radius vs Distance from Injector')
     return None
 
-
-# Function to calculate raduys of chamber based off x
+# Function to calculate radius of chamber based off x
 def calc_radius(x, A_c, A_t, A_e, L_c):
     # Inputs:
-    # x - type: float - distance from injector
+    # x - type: float - distance from injector [inch]
     # A_c - type: float - chamber area [m^2]
     # A_t - type: float - throat area [m^2]
     # A_e - type: float - exit area [m^2]
     # L_c - type: float - chamber length [inch]
 
     # Convert to inch
-    D_c = 2*np.sqrt(A_c/np.pi)*39.3701 # Calculate chamber diameter [m]
-    D_t = 2*np.sqrt(A_t/np.pi)*39.3701# Calculate throat diameter [m]
-    D_e = 2*np.sqrt(A_e/np.pi)*39.3701# Calculate exit diameter [m]
+    D_c = 2*np.sqrt(A_c/np.pi)*39.3701 # Calculate chamber diameter [inch]
+    D_t = 2*np.sqrt(A_t/np.pi)*39.3701# Calculate throat diameter [inch]
+    D_e = 2*np.sqrt(A_e/np.pi)*39.3701# Calculate exit diameter [inch]
 
     # Convert L_c to inch
     L_c = L_c * 39.3701
@@ -374,17 +381,7 @@ def calc_radius(x, A_c, A_t, A_e, L_c):
     return r
     
   
-    return r*0.0254 # Return in m 
-
-# Function to calculate the central finite difference
-def central_finite_difference(func, x, h, *args):
-    # Inputs:
-    # func - type: function - function to calculate
-    # x - type: float - x value
-    # h - type: float - step size
-    # args - type: list - arguments to pass to function
-
-    return (func(x+h, *args) - func(x-h, *args))/(2*h)
+    #return r*0.0254 # Return in m 
 
 # Function which outlines ODE for local mach number squarred
 def dN_dx (x, y, h, keydata):
@@ -501,7 +498,7 @@ def derivs(x, y, h, keydata):
 
     return k
 
-# RK4 function
+# RK4 (runga kutta 4th order) function
 def rk4(x, y, n, h, keydata):
     # Inputs
     # x: Independent variable
@@ -532,18 +529,23 @@ def rk4(x, y, n, h, keydata):
     x = x+h # increment x by step size
     return x, y
 
-
 # Function to solve ODEs using RK4 method
 def integrator(x, y, n, h, xend, keydata):
-    # Inputs 
-    # x: Independent variable
-    # y: Dependent variables (list)
-    # n: Number of ODEs
-    # h: Step size
-    # xend: Final value of independent variable
-    # m: Iteration counter
-    # keydata: list - key data to pass to ODE solver contains array of radius and specific heat ratio
+    """
+    Numerical integrator for solving ordinary differential equations (ODEs).
 
+    Parameters:
+    - x: Independent variable
+    - y: Dependent variables (list)
+    - n: Number of ODEs
+    - h: Step size
+    - xend: Final value of independent variable
+    - keydata: List of key data to pass to ODE solver (contains array of radius and specific heat ratio)
+
+    Returns:
+    - x: Final value of independent variable
+    - y: Final values of dependent variables (list)
+    """
     while True:
         if (xend - x < h):
             h = xend - x
@@ -553,29 +555,28 @@ def integrator(x, y, n, h, xend, keydata):
     return x, y
 
 def calc_flow_data(M_c, P_c, T_c, keydata):
-    #Inputs:
-    # x_array - type: array - distance from injector in inches
-    # r_array - type: array - radius of chamber at x
-    # gam - type: float - specific heat ratio
-    # M_c - type: float - chamber mach number
-    # P_c - type: float - chamber pressure [Pa]
-    # T_c - type: float - chamber temperature [K]
-    # F_Vac - type: float - vacuum thrust [N] 
-    # dF_dx - type: float - thrust gradient [N/m]
-    # dQ_dx - type: float - heat transfer gradient [W/m]
+    """
+    Calculate key flow data including Pressure, Temperature, and Mach number.
+    Will use fourth order runge kutta (RK4) to solve the following ODEs (worked example in testfile.py)
 
-    # Calculate key flow data Pressure, Temperature, Mach number
+    Args:
+        M_c (float): Chamber Mach number.
+        P_c (float): Chamber pressure [Pa].
+        T_c (float): Chamber temperature [K].
+        keydata: Additional key data of form [A_c, A_t, A_e, L_c, gam, Cp, dF_dx, dQ_dx].
+
+    Returns:
+        tuple: A tuple containing the step size (dx) [Inch], a list of x values (xp_m) [Inch], and a list of y values (yp_m) contains Mach Number, Pressure [Pa], Temperature [K].
+    """    
     
-    # Will use fourth order runge kutta to solve the following ODEs (worked example in testfile.py)
-    # we will let y be a list of [N, P, T] where N is the local mach number squared, P is the local pressure, T is the local temperature 
     # Define initial conditions of RK4 algorithm 
     n = 3 # Number of ODEs 
     yi = [ M_c**2, P_c, T_c] # Initial conditions of n dependent variables [N, P, T] remebering N is Mach number squarred
-    xi = 0 # Initial value of independent variable
-    xf = 135.5  # Distance from injector to end of engine in inch (has to be inch for radius function to work)
-    dx = 25.19/200 # Step size 
-    xout = dx # Output interval
-    x = xi # Working x value (set to initial condition)
+    xi = 0 # [Inch] Initial value of independent variable
+    xf = 135.5 # [inch] Distance from injector to end of engine in inch (has to be inch for radius function to work)
+    dx = 25.19/200 # Step size [inch]
+    xout = dx # [Inch] Output interval
+    x = xi # [Inch] Working x value (set to initial condition)
     m = 0 # Iteration counter
     xp_m = [] # Track all x values through out iteration process
 
@@ -595,7 +596,7 @@ def calc_flow_data(M_c, P_c, T_c, keydata):
         if (x>=xf):
             break
     
-    # # Output results
+    # Output results
     # for i in range(m+1):
     #    print("x = ", xp_m[i]*0.0254, "y = ", yp_m[i]) 
     # Create plots of pressure, temperature, mach number
@@ -1014,7 +1015,7 @@ def main():
     M_c = 0.2279 # Injector mach number
     P_c = 18.23E6 # Chamber pressure in Pascals
     T_c = 3542 # Chamber temperature in Kelvin
-    Cp = 3.7848E3	 # Specific heat at constant pressure in J/KgK
+    Cp = 1	 # Specific heat at constant pressure in J/KgK NOTE THIS IS A PLACEHOLDER CALCULATED BY HydrogenModelV2.py
     F_Vac = 2184076.8131 # Vacuum thrust in lbs 
     M_c = 0.26419 # Injector mach number
     Ncc = 430.0 # Number of coolant channels 
@@ -1028,7 +1029,7 @@ def main():
 
     # Key data
     keydata = [A_c, A_t, A_e, L_c, gam, Cp, dF_dx, dQ_dx] # Key data to pass to ODE solver
-
+    
     # Calculate flow data
     dx, xp_m, yp_m = calc_flow_data(M_c, P_c, T_c, keydata) # returns pressure, temperature, mach number throughout  entire engine
 

@@ -576,16 +576,16 @@ def main():
     #hydrogen_debugging(coeff)
 
     # Call the required function
-    P_desired = 2.568E6 # Pa
-    T = 38 # K
-    rho_guess = 40 # kg/m^3
+    P_desired = 20E6 # Pa
+    T = 988.50 # K
+    rho_guess = 80 # kg/m^3
 
     # For this Temp grab the ortho/para percentage
     paraPercent = para_fraction(T)/100
 
     h, rho, Cp, Cv = hydrogen_thermodynamics(P_desired, rho_guess, paraPercent, T)
 
-    # print(f'Temperature: {T} K \n Pressure: {P_desired} Pa \n Density: {rho} kg/m^3 \n Enthalpy: {h} kJ/kg  \n Isobaric Heat Capacity: {Cp} kJ/(kg*K) \n Isochoric Heat Capacity: {Cv} kJ/(kg*K)')
+    #print(f'Temperature: {T} K \n Pressure: {P_desired} Pa \n Density: {rho} kg/m^3 \n Enthalpy: {h} kJ/kg  \n Isobaric Heat Capacity: {Cp} kJ/(kg*K) \n Isochoric Heat Capacity: {Cv} kJ/(kg*K)')
     #paraTemp, paraPercent = paraPercentFunction()
     
     # print(para_fraction(150))
