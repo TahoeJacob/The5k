@@ -605,9 +605,9 @@ def calc_flow_data(M_c, P_c, T_c, keydata):
     return dx, xp_m, yp_m
 
 
-#-------------------------------------------------------------------
-# FUNCTION TO CALCULATE HEAT TRANSFER THROUGH COOLANT CHANNELS
-# ------------------------------------------------------------------
+#-----------------------------------------------------------------------------------
+# FUNCTION TO CALCULATE SECTION 2.6 Values (Thermodynamics) THROUGH COOLANT CHANNELS
+#-----------------------------------------------------------------------------------
 
 # Function to calculate dilute gas component of heat transfer coefficient (Eqtn 2.6.1 from cryo-rocket.com)
 def calc_dilute_gas_component(tau, delta, coef, c):
@@ -953,8 +953,12 @@ def calc_gas_specific_heat(T, molecules, molecular_mass, molecular_fraction):
 
     return Cp_mix # Return specific heat of mixture in J/molK
 
+#-------------------------------------------------------------------
+# FUNCTION TO CALCULATE HEAT TRANSFER THROUGH COOLANT CHANNELS
+# ------------------------------------------------------------------
+
 # Function which outputs chamber inner surface area
-def calc_A_gas(x, y, h, Ncc, keydata):
+def calc_A_gas(x, y, dx, Ncc, keydata):
     # Inputs
     # x - type: float - distance from injector
     # y - type: array - dependent variables [N, P, T]
@@ -968,7 +972,7 @@ def calc_A_gas(x, y, h, Ncc, keydata):
     A_e = keydata[2] # Area exit [m^2]
     L_c = keydata[3] # Chamber length [inch]
 
-    return (2*np.pi*calc_radius(x,A_c, A_t, A_e, L_c)*h)/Ncc
+    return (2*np.pi*calc_radius(x,A_c, A_t, A_e, L_c)*dx)/Ncc
 
 def calc_h_gas(x, y, h, keydata):
     # Inputs
@@ -981,14 +985,20 @@ def calc_h_gas(x, y, h, keydata):
     return None
 
 # function which calculates the heat transfer through the walls and coolant channels 
-def calc_heat_transfer(x, y, h, Ncc, keydata):
-    # Inputs
-    # x - type: array - distance from injector
-    # y - type: array - dependent variables [N, P, T]
-    # h - type: float - step size
-    # Ncc - type: float - number of coolant channels
-    # keydata - type: list - key data to pass to ODE solver contains array of radius and specific heat ratio A_c, A_t, A_e, L_c, gam, Cp, dF_dx, dQ_dx
-
+def calc_heat_transfer(x, y, dx, Ncc, gam, engine_geometry):
+    """
+    Calculate the heat transfer in a mixture optimization process.
+    Parameters:
+    x (array): Distance from injector.
+    y (array): Dependent variables [N, P, T] (Section 5.3 results).
+    dx (float): Step size.
+    Ncc (float): Number of coolant channels.
+    gam (float): Specific heat ratio calculated from CEA.
+    engine_geometry: Engine geometry data.
+    Returns:
+    tuple which contains T_cw, T_hw, q_H2, q_wall, q_gas.
+    """
+    
     # Solve for Thw and Tcw using a multivariable newtonian method
 
 
@@ -996,7 +1006,7 @@ def calc_heat_transfer(x, y, h, Ncc, keydata):
     # q_H2 = h_H2*A_H2*(Tcw - T_H2)
     # q_wall = k*A_gas*dT/dy
 
-    A_gas = calc_A_gas(x, y, h, Ncc, keydata)
+    A_gas = calc_A_gas(x, y, dx, Ncc, keydata)
 
 
     # Define the functions 
@@ -1005,11 +1015,50 @@ def calc_heat_transfer(x, y, h, Ncc, keydata):
 
     return None
 
+
+class EngineChannels:
+    """
+    Class representing engine channels for mixture optimization.
+    Attributes:
+        x_j (list): Array of x values from injector which will be used to calculate the channel geometry [m]
+        chan_w (list): Array of channel widths [m]
+        chan_h (list): Array of channel heights [m]
+        chan_t (list): Array of channel thicknesses from hot side to cold side [m]
+    Methods:
+        get_geo(x):
+            Function which will return the current channel width, height, and thickness at a given x value
+            Parameters:
+                x (float): Distance from injector [m]
+            Returns:
+                tuple: A tuple containing the channel width, height, thickness, and index of the closest x value in the array
+    """
+
+    def __init__(self, x_j, A_c, A_t, A_e, L_c, chan_w, chan_h, chan_t):
+        self.x_j = x_j # Array of x values from injector which will be used to calculate the channel geometry [m]
+        self.A_c = A_c # Area injector [m^2]
+        self.A_t = A_t # Area throat [m^2]
+        self.A_e = A_e # Area exit [m^2]
+        self.L_c = L_c # Chamber length [m]
+        self.chan_w = chan_w # Array of channel widths [m]
+        self.chan_h = chan_h # Array of channel heights [m]
+        self.chan_t = chan_t # Array of channel thicknesses from hot side to cold side [m]
+
+    def get_geo(self, x):
+        # Function which will return the curren channel width, height, and thickness at a given x value
+        # Inputs
+        # x - type: float - distance from injector [m]
+        # Outputs
+        # chan_w - type: float - channel width [m]
+        # chan_h - type: float - channel height [m]
+        # chan_t - type: float - channel thickness [m]
+
+        # Find the closest x value in the array
+        idx = (np.abs(np.array(self.x_j) - x)).argmin()
+        return self.chan_w[idx], self.chan_h[idx], self.chan_t[idx], idx
+
+
 def main():
     # Main function
-
-    # Variable to show plots
-    showPlots = False
     # Constants
     gam = 1.19346 # Specific heat ratio
     M_c = 0.2279 # Injector mach number
@@ -1019,9 +1068,23 @@ def main():
     F_Vac = 2184076.8131 # Vacuum thrust in lbs 
     M_c = 0.26419 # Injector mach number
     Ncc = 430.0 # Number of coolant channels 
-
+    showPlots = False # Boolean to show plots
+    # Loading geometry data into the engine channels class
+    # x_j = [-35.56, -34.29, -32.41, -30.48, -27.94, -25.4, -22.86, -20.32, -17.78, -15.24, -12.7, -11.43, -10.16, -8.89, -7.62, -6.35, -5.08, -3.81, -3.048, -2.54, -1.27, 0, 2.54, 5.08, 7.62, 10.16, 12.7, 15.24, 17.78, 20.32, 24.71] # Array of x values from throat which will be used to calculate the channel geometry [m]
+    # x_j_subtracted = [(x+35.56)/100 for x in x_j]
+    x_j =     [0.000000, 0.012700, 0.031500, 0.050800, 0.076200, 0.101600, 0.127000, 0.152400, 0.177800, 0.203200, 0.228600, 0.241300, 0.254000, 0.266700, 0.279400, 0.292100, 0.304800, 0.317500, 0.325120, 0.330200, 0.342900, 0.355600, 0.381000, 0.406400, 0.431800, 0.457200, 0.482600, 0.508000, 0.533400, 0.558800, 0.602700] # Array of x values from throat which will be used to calculate the channel geometry [m]
+    # Channel width [m]
+    chan_w =  [0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001509, 0.001217, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001227, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575]  # Array of channel widths [m] 
+    # Channel height [m]
+    chan_h =  [0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002512, 0.002619, 0.002845, 0.002535, 0.002337, 0.002139, 0.002217, 0.002352, 0.002477, 0.002448, 0.002609, 0.002741, 0.002870, 0.004318, 0.004953, 0.005004, 0.005100, 0.005476, 0.005817, 0.006096, 0.006096, 0.006069] # Array of channel heights [m]
+    # Channel thickness [m]
+    chan_t =  [0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889]  # Array of channel thicknesses from hot side to cold side [m]
+    
     # Calculate the engine geometry based off CEA data
-    A_c, A_t, A_e, L_c = engine_geometry(gam, P_c, T_c, F_Vac, showPlots) # returns x_array (inches from injector) and r_array (radius of chamber at x) 
+    A_c, A_t, A_e, L_c = engine_geometry(gam, P_c, T_c, F_Vac, showPlots) # returns area of injector, throat, exit, and chamber length all in [m^2, m^2, m^2 m] respectively
+    
+    # Create engine channels object
+    engine_channels = EngineChannels(x_j,A_c, A_t, A_e, L_c, chan_w, chan_h, chan_t)
 
     # Initial conditons for thermal analysis set F and Q to zero for isentropic condition.
     dF_dx = 0 # Thrust gradient
@@ -1038,10 +1101,10 @@ def main():
 
 
     # Test transport propertie stuff
-    
     create_plot([xp*0.0254 for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
     create_plot([xp*0.0254 for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
     create_plot([xp*0.0254 for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
+    
     if showPlots:
 
         molecules = ['H2', 'O2', 'H2O', 'OH', 'H', 'O'] # Molecules in combustion gases
