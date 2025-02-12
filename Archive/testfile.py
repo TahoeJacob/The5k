@@ -110,6 +110,26 @@ def main():
         print("x = ", xp_m[i], "y = ", yp_m[i])
 
 
+
+    # Code which calculates the injector mach number which works best for initial isnetropic solution
+    # Calculate flow data (Section 5.3 results) 
+    # vale = np.arange(0.22790, 0.27001, 0.00001)
+    # potential_sol = []
+    # vale = [0.26085]
+    # # Initial loop which will be used to calculate first heat transfer data
+    # for M_c_RS25 in vale:
+    #     # Assuming calc_flow_data function is defined elsewhere and returns the relevant values
+    #     dx, xp_m, yp_m = calc_flow_data(M_c_RS25, P_c, T_c, keydata)  # Corrected the function call with M_c_RS25
+    #     print(M_c_RS25)
+    #     if np.sqrt(yp_m[np.argmax([t[0] for t in yp_m])][0]) > 1.0:  # If the maximum Mach number is greater than 1
+    #         index = np.argmax([t[0] for t in yp_m])  # Extract the index of largest value from the yp_m tuple array
+    #         print("above Mach 1", M_c_RS25, index)
+    #         if index > len(xp_m) - 30:  # Check if the index is within the last 30 values
+    #             potential_sol.append(M_c_RS25)
+
+    # print(potential_sol)
+
+
     return None
 
 main()

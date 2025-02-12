@@ -557,8 +557,8 @@ def hydrogen_thermodynamics(P_desired, rho_guess, paraPercent, T):
 
     helmholtz_output_para = Helmholtz(rho_guess, T, Tc, rho_c, Rs, 'P', coefficients)
     helmholtz_output_ortho = Helmholtz(rho_guess, T, Tc, rho_c, Rs, 'O', coefficients)
-    Cp = helmholtz_output_para[5]*paraPercent + helmholtz_output_ortho[5]*(1-paraPercent)   # Specific heat at constant pressure [kJ/(kg*K)]
-    Cv = helmholtz_output_para[6]*paraPercent + helmholtz_output_ortho[6]*(1-paraPercent)   # Specific heat at constant volume [kJ/(kg*K)]
+    Cp = (helmholtz_output_para[5]*paraPercent + helmholtz_output_ortho[5]*(1-paraPercent))*1E3   # Specific heat at constant pressure [J/(kg*K)]
+    Cv = (helmholtz_output_para[6]*paraPercent + helmholtz_output_ortho[6]*(1-paraPercent))*1E3    # Specific heat at constant volume [J/(kg*K)]
     h = helmholtz_output_para[0]*paraPercent + helmholtz_output_ortho[0]*(1-paraPercent)    # Enthalpy [kJ/kg]
     #S = helmholtz_output_para[3]*paraPercent + helmholtz_output_ortho[3]*(1-paraPercent)    # Entropy [kJ/(kg * K)]
     
@@ -585,7 +585,7 @@ def main():
 
     h, rho, Cp, Cv = hydrogen_thermodynamics(P_desired, rho_guess, paraPercent, T)
 
-    #print(f'Temperature: {T} K \n Pressure: {P_desired} Pa \n Density: {rho} kg/m^3 \n Enthalpy: {h} kJ/kg  \n Isobaric Heat Capacity: {Cp} kJ/(kg*K) \n Isochoric Heat Capacity: {Cv} kJ/(kg*K)')
+    print(f'Temperature: {T} K \n Pressure: {P_desired} Pa \n Density: {rho} kg/m^3 \n Enthalpy: {h} kJ/kg  \n Isobaric Heat Capacity: {Cp} kJ/(kg*K) \n Isochoric Heat Capacity: {Cv} kJ/(kg*K)')
     #paraTemp, paraPercent = paraPercentFunction()
     
     # print(para_fraction(150))
