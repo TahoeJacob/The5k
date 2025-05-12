@@ -416,8 +416,8 @@ def dN_dx (x, y, h, keydata):
     dQ_dx = keydata[4]
 
     # Calculate area at x 
-    A = np.pi* (engine_channels.get_radius(x))**2
-    dA_dx = (np.pi*engine_channels.get_radius(x+h)**2 - np.pi*engine_channels.get_radius(x-h)**2)/(2*h)
+    A = np.pi* (engine_channels.get_radius_inch(x))**2
+    dA_dx = (np.pi*engine_channels.get_radius_inch(x+h)**2 - np.pi*engine_channels.get_radius_inch(x-h)**2)/(2*h)
 
     dN_dx = ((N/(1-N)) * ((1+gam*N)/(Cp*T)) * dQ_dx  +  (N/(1-N))*((2 + (gam-1)*N)/(specificGasConstant*T))*dF_dx - (N/(1-N))*((2 + (gam-1)*N)/A)*dA_dx)
 
@@ -447,8 +447,8 @@ def dP_dx (x, y, h, keydata):
     dQ_dx = keydata[4]
     
     # Calculate area at x 
-    A = np.pi* (engine_channels.get_radius(x))**2
-    dA_dx = (np.pi*engine_channels.get_radius(x+h)**2 - np.pi*engine_channels.get_radius(x-h)**2)/(2*h)
+    A = np.pi* (engine_channels.get_radius_inch(x))**2
+    dA_dx = (np.pi*engine_channels.get_radius_inch(x+h)**2 - np.pi*engine_channels.get_radius_inch(x-h)**2)/(2*h)
 
     dP_dx = (-(P/(1-N))*((gam*N)/(Cp*T))*dQ_dx - (P/(1-N))*((1+ (gam-1)*N)/(specificGasConstant*T))*dF_dx + (P/(1-N))*((gam*N)/A)*dA_dx)
     return dP_dx
@@ -477,8 +477,8 @@ def dT_dx (x, y, h, keydata):
     dQ_dx = keydata[4]
 
     # Calculate area at x 
-    A = np.pi* (engine_channels.get_radius(x))**2
-    dA_dx = (np.pi*engine_channels.get_radius(x+h)**2 - np.pi*engine_channels.get_radius(x-h)**2)/(2*h)
+    A = np.pi* (engine_channels.get_radius_inch(x))**2
+    dA_dx = (np.pi*engine_channels.get_radius_inch(x+h)**2 - np.pi*engine_channels.get_radius_inch(x-h)**2)/(2*h)
 
 
     
@@ -585,8 +585,8 @@ def calc_flow_data(M_c, P_c, T_c, keydata):
     n = 3 # Number of ODEs 
     yi = [ M_c**2, P_c, T_c] # Initial conditions of n dependent variables [N, P, T] remebering N is Mach number squarred
     xi = 0 # [Inch] Initial value of independent variable
-    xf = 24.29#135.5 # [inch] Distance from injector to end of engine in inch (has to be inch for radius function to work)
-    dx = 24.29/200 # Step size [inch]
+    xf = 25.21#24.29#135.5 # [inch] Distance from injector to end of engine in inch (has to be inch for radius function to work)
+    dx =  25.21/200 # Step size [inch]
     xout = dx # [Inch] Output interval
     x = xi # [Inch] Working x value (set to initial condition)
     m = 0 # Iteration counter
@@ -917,7 +917,7 @@ def calc_gas_tranport_properties(T, molecules, molecular_mass, molecular_fractio
         viscocisty_mix += (molecular_fraction[i]*viscosity_array[i])/(molecular_fraction[i] + visc_den_sum)
         thermal_mix += (molecular_fraction[i]*thermal_conductivity_array[i])/(molecular_fraction[i] + therm_den_sum)
     
-    # Convert to SI units prior to returning [Pa*s] and [W/m*K]
+    # Convert to SI units prior to returning, [Pa*s] and [W/m*K]
     return viscocisty_mix*1E-7, thermal_mix*1E-4
 
 # Function to calculate the specific heat of the gas
@@ -990,16 +990,16 @@ def calc_gas_specific_heat(T, molecules, molecular_mass, molecular_fraction):
 # ------------------------------------------------------------------
 
 # Function which outputs chamber inner surface area
-def calc_A_gas(x, y, dx, Ncc, engine_geometry):
+def calc_A_gas(x, dx, Ncc, engine_geometry):
     # Inputs
-    # x - type: float - distance from injector
-    # y - type: array - dependent variables [N, P, T]
-    # h - type: float - step size
+    # x - type: float - distance from injector [m]
+    # y - type: array - dependent variables [N, P, T] [Mach number^2, Stagnation Pressure [Pa], static Temperature [K]]
+    # dx - type: float - step size [m]
     # Ncc - type: float - number of coolant channels
     # engine_geometry - type: EngineChannels - engine geometry data
     # Returns
     # A_gas - type: float - chamber inner surface area [m^2]
-    return (2*np.pi*engine_geometry.to_meter(engine_geometry.get_radius(x))*engine_geometry.to_meter(dx))/Ncc
+    return ((2*np.pi*engine_geometry.get_radius_meter(x))*dx)/Ncc
 
 def calc_frictionFactor(Re, Dh, initial_guess, e):
     """
@@ -1047,9 +1047,9 @@ def calc_qgas(x, y, dx, T_hw, Ncc, engine_geometry, engine_data):
     """
     Calculate the heat transfer from gas to wall.
     Parameters:
-    x (array): Distance from injector.[inch]
+    x (array): Distance from injector.[m]
     y (array): Dependent variables [N, P, T] (Section 5.3 results). 
-    dx (float): Step size. [inch]
+    dx (float): Step size. [m]
     Ncc (float): Number of coolant channels.
     gam (float): Specific heat ratio calculated from CEA.
     engine_geometry: Engine geometry data.
@@ -1067,20 +1067,21 @@ def calc_qgas(x, y, dx, T_hw, Ncc, engine_geometry, engine_data):
     T_stag = engine_data.T_c # Stagnation temperature [K] From CEA
     P_stag = engine_data.P_c # Stagnation pressure [Pa] From CEA
     # A_gas is a function as its used in q_wall (Eqtn 6.1.3)
-    A_gas = calc_A_gas(x, y, dx, Ncc, engine_geometry) # [m^2]
-
+    A_gas = calc_A_gas(x, dx, Ncc, engine_geometry) # [m^2]
+    
     # Calculate required values for barts equation
     # Unpack y
-    N, Pc, Ts = y # N = mach number^2, Stagnation Pressure [Pa], static Temperature [K]
+    N, Pc, Ts = y # N = mach number^2, Static Pressure [Pa], static Temperature [K]
     M = np.sqrt(N) # Mach number
 
     # Calculate free stream temperature
-
+    T_free_stream = T_stag/(1+((gam-1)/2) *N)
+    
     # Calculate t star (reference temperature) to evaluate eta and llambda
-    T_star = Ts*(1 + 0.032*(N) + 0.58*((T_hw/Ts) - 1)) 
+    T_star = T_free_stream*(1 + 0.032*(N) + 0.58*((T_hw/T_free_stream) - 1)) 
 
     # Diamater at x in [m]
-    D = engine_geometry.to_meter(2*engine_geometry.get_radius(x)) # Diameter in [m]
+    D = 2*engine_geometry.get_radius_meter(x) # Diameter in [m]
     
     # Combustion Gas Viscosity (eta) [Pa*s] and Thermal Conductivty (llambda) [W/mK] at current temperature T (Note gas composition composition is defined by CEA)
     eta, llambda = calc_gas_tranport_properties(T_star, engine_data.molecules, engine_data.molecular_mass, engine_data.molecular_fraction)
@@ -1092,7 +1093,7 @@ def calc_qgas(x, y, dx, T_hw, Ncc, engine_geometry, engine_data):
 
     # Calculate Pranndtl Number
     Pr = (Cp*eta)/llambda
-    #print(f"Ts {Ts} [K], T_stag {T_stag} [K], T* {T_star} [K], Eta {eta} [Pa-s], Llambda {llambda} [W/m*K], Cp {Cp} [J/kg*K], Prandtl {Pr}")
+    print(f"Ts {Ts} [K], T_stag {T_stag} [K], T* {T_star} [K], Eta {eta} [Pa-s], Llambda {llambda} [W/m*K], Cp {Cp} [J/kg*K], Prandtl {Pr}")
     # C star m/s
     c_star = engine_data.c_star
     
@@ -1103,7 +1104,7 @@ def calc_qgas(x, y, dx, T_hw, Ncc, engine_geometry, engine_data):
     Ru = engine_geometry.to_meter(0.494 * R_t) # Radius of contraction [m]
 
     # Cross Sectional area of channel at position x
-    A_x = (np.pi*engine_geometry.to_meter(engine_geometry.get_radius(x))**2) # Area at position x in m^2
+    A_x = (np.pi*(engine_geometry.get_radius_meter(x))**2) # Area at position x in m^2
 
     # We now have all information for calculating bartz equation 
     # Test data from Huzel, Dieter K._ Huang, David H. - Modern Engineering for Design of Liquid-Propellant Rocket Engines-American Institute of Aeronautics and Astronautics (1992) (2).pdf
@@ -1128,7 +1129,7 @@ def calc_qgas(x, y, dx, T_hw, Ncc, engine_geometry, engine_data):
     
     # Calculate heat transfer from gas to wall
     q_gas = h_gas*A_gas*(T_aw - T_hw)
-    # print("H_gas",h_gas)
+    print("X", x, "P stag", P_stag, "P_static", Pc, "T Stag", T_stag, "T Static", Ts,  "H_gas",h_gas, "A_gas", A_gas, "T_aw", T_aw, "T_hw", T_hw, "q_gas", q_gas)
     return q_gas
 
 # function which calculate heat transfer from hot wall to cold wall 6.1.2
@@ -1137,8 +1138,8 @@ def calc_qH2(x, dx, s, T_cw, T_LH2, P_LH2, Ncc, engine_geometry, engine_data):
     Calculate the heat transfer from hot wall to coolant wall.
     
     Parameters:
-    - x (array): Distance from injector [inch].
-    - dx (float): Step size [inch].
+    - x (array): Distance from injector [m].
+    - dx (float): Step size [m].
     - s (float): Linear distance hydrogen has flowed since entering the cooling channels [inch] (summation of dx)
     - T_cw (float): Coolant wall temperature [K].
     - T_LH2 (float): Liquid hydrogen temperature [K].
@@ -1152,8 +1153,8 @@ def calc_qH2(x, dx, s, T_cw, T_LH2, P_LH2, Ncc, engine_geometry, engine_data):
 
     # Calculate liquid hydrogen heat transfer coefficient
     # Get channel dimensions
-    chan_w, chan_h, chan_t, chan_land = engine_geometry.get_geo(engine_geometry.to_meter(x))
-    #print(f"W: {chan_w}[m], H: {chan_h}[m], t: {chan_t}[m], land: {chan_land}[m], x {x}[inch], x: {engine_geometry.to_meter(x)} [m]")
+    chan_w, chan_h, chan_t, chan_land = engine_geometry.get_geo(x)
+    #print(f"W: {chan_w}[m], H: {chan_h}[m], t: {chan_t}[m], land: {chan_land}[m], x {engine_geometry.to_inch(x)}[inch], x: {x} [m]")
     # Get the viscosity of LH2 @ T 
     
     # Calculate LH2 viscosity and thermal conductivity # [W/m*K] and [Pa*s]
@@ -1183,7 +1184,7 @@ def calc_qH2(x, dx, s, T_cw, T_LH2, P_LH2, Ncc, engine_geometry, engine_data):
     
     # Calculate LH2 prandtl number
     Pr = (Cp*eta_LH2)/therm_LH2 # TESTED againnst NIST and MINI-REFPROP PASSED @  38.9MPa 296K PrNIST = 0.677 vs Pr = 0.688
-    # print(P_LH2, T_LH2, rho_LH2, Cp, Cv, therm_LH2, eta_LH2, Pr, Dh)
+    #print(P_LH2, T_LH2, rho_LH2, Cp, Cv, therm_LH2, eta_LH2, Pr, Dh)
     # Calculate Xi (weird squiqqly greek letter) smooth rought friction factor to smooth friction factor
     xi = f/calc_frictionFactor(Re, Dh, 0.02, 0)
 
@@ -1191,7 +1192,7 @@ def calc_qH2(x, dx, s, T_cw, T_LH2, P_LH2, Ncc, engine_geometry, engine_data):
     C1 = 1#(1 + 1.5*(Pr**(-1/6))*Re**(-1/8)*(Pr - 1)*xi)/(1+1.5*(Pr**(-1/6))*Re**(-1/8)*(Pr*xi - 1))
     
     # Calculate C2 
-    C2 = 1 + (engine_geometry.to_meter(s)/Dh)**(-0.7) * (T_cw/T_LH2)**(0.1)
+    C2 = 1 + (s/Dh)**(-0.7) * (T_cw/T_LH2)**(0.1)
     
     # Calculate C3 Eqtn 6.1.14 
     radius, radiusType = engine_geometry.get_r_value(x)
@@ -1227,7 +1228,7 @@ def calc_qH2(x, dx, s, T_cw, T_LH2, P_LH2, Ncc, engine_geometry, engine_data):
     # fin efficieny
     eta_fin = np.tanh(m*Lc)/(m*Lc)
 
-    A_H2 = (2*eta_fin*chan_h + chan_w)*engine_geometry.to_meter(dx) # m^2
+    A_H2 = (2*eta_fin*chan_h + chan_w)*dx# m^2
     
     # Calculate q_H2 
     q_H2 = h_LH2*A_H2*(T_cw - T_LH2)
@@ -1251,7 +1252,7 @@ def calc_qWall(x, y, dx, T_cw, T_hw, Ncc, engine_geometry, engine_data):
     # Get channel dimensions
     chan_w, chan_h, chan_t, chan_land = engine_geometry.get_geo(x)
     # Calculate A_gas
-    A_gas = calc_A_gas(x, y, dx, Ncc, engine_geometry)
+    A_gas = calc_A_gas(x, dx, Ncc, engine_geometry)
     
     # Calculate temperature gradient between hot wall and coolant wall
     dT = (T_hw-T_cw)/chan_t
@@ -1368,17 +1369,16 @@ class EngineChannels:
     def get_geo(self, x):
         # Function which will return the curren channel width, height, and thickness at a given x value
         # Inputs
-        # x - type: float - distance from injector [inch]
+        # x - type: float - distance from injector [m]
         # Outputs
         # chan_w - type: float - channel width [m]
         # chan_h - type: float - channel height [m]
         # chan_t - type: float - channel thickness [m]
 
         # Find the closest x value in the array
-        x = self.to_meter(x)
         idx = (np.abs(np.array(self.x_j) - x)).argmin()
         return self.chan_w[idx], self.chan_h[idx], self.chan_t[idx], self.chan_land[idx] 
-    def get_radius(self, x):
+    def get_radius_inch(self, x):
         # Function which will return the current radius at a given x value
         # Inputs
         # x - type: float - distance from injector [inch]
@@ -1387,6 +1387,15 @@ class EngineChannels:
 
         # Find the closest x value in the array
         return calc_radius(x, self.A_c, self.A_t, self.A_e, self.L_c)
+    def get_radius_meter(self, x):
+        # Function which will return the current radius at a given x value
+        # Inputs
+        # x - type: float - distance from injector [m]
+        # Outputs
+        # radius - type: float - radius of the engine channel [m]
+
+        # Find the closest x value in the array
+        return calc_radius(x*39.3701, self.A_c, self.A_t, self.A_e, self.L_c)*0.0254 # Convert to meters
     def to_inch(self, x):
         # Function which will convert meters to inches
         # Inputs
@@ -1404,12 +1413,12 @@ class EngineChannels:
     def cross_sectional_area(self, x):
         # Function which will return the current channel cross sectional area at a given x value
         # Inputs
-        # x - type: float - distance from injector [inch]
+        # x - type: float - distance from injector [m]
         # Outputs
         # A_x - type: float - cross sectional area at position x [m^2]
         
         # Find the closest x value in the array
-        x = self.to_meter(x)
+        
         idx = (np.abs(np.array(self.x_j) - x)).argmin()
 
         return self.chan_w[idx]*self.chan_h[idx]
@@ -1500,7 +1509,7 @@ def main():
     T_c_RS25 = 3589 # Chamber temperature in Kelvin from CEA
     F_Vac_RS25 = 2184076.8131 # Vacuum thrust in lbs from CEA
     mdot_LH2_RS25 = 13.5 # kg/s Calculated 
-    M_c_RS25 = 0.26085 # For 24.23 inch  #0.26712 for  135.5 #0.26412 # Injector mach number guessed using function calc_flow_data and testfile section 1
+    M_c_RS25 =0.26085 # For 24.23 inch  #0.26712 for  135.5 #0.26412 # Injector mach number guessed using function calc_flow_data and testfile section 1
     k_RS25 = 316 # W/m*K Thermal conductivity of chamber wall
     Ncc_RS25 = 430.0 # Number of coolant channels guessed
     showPlots = False # Boolean to show plots
@@ -1521,7 +1530,7 @@ def main():
     # print(x_j_subtracted)
     x_j =       [0.0,      0.0127,   0.0315,   0.0508,   0.0762,   0.1016,   0.127,    0.1524,   0.1778,   0.2032,   0.2286,   0.254,    0.2667,   0.2794,   0.2921,   0.3048,   0.3175,   0.32512,  0.3302,   0.3429,   0.3556,   0.381,    0.4064,   0.4318,   0.4572,   0.4826,   0.508,    0.5334,   0.5588,   0.6027]#[0.000000, 0.012700, 0.031500, 0.050800, 0.076200, 0.101600, 0.127000, 0.152400, 0.177800, 0.203200, 0.228600, 0.241300, 0.254000, 0.266700, 0.279400, 0.292100, 0.304800, 0.317500, 0.325120, 0.330200, 0.342900, 0.355600, 0.381000, 0.406400, 0.431800, 0.457200, 0.482600, 0.508000, 0.533400, 0.558800, 0.602700] # Array of x values from throat which will be used to calculate the channel geometry [m]
     # Channel  land [m]
-    chan_land = [0.002068, 0.002068, 0.002068, 0.002068, 0.002068, 0.002045, 0.001976, 0.001857, 0.001748, 0.001844, 0.001847, 0.001653, 0.001562, 0.001463, 0.001361, 0.001275, 0.001196, 0.001261, 0.001143, 0.001113, 0.001105, 0.001209, 0.001516, 0.001603, 0.001554, 0.001844, 0.002131, 0.002405, 0.002685, 0.003155]
+    chan_land = [0.002068, 0.002068, 0.002068, 0.002068, 0.002068, 0.002045, 0.001976, 0.001857, 0.001748, 0.001844, 0.001847, 0.001653, 0.001562, 0.001463, 0.001361, 0.001275, 0.001196, 0.001261, 0.001143, 0.001113, 0.001105, 0.001209, 0.001516, 0.001603, 0.001554, 0.001844, 0.002131, 0.002405, 0.002685, 0.003155] # Array of channel land widths [m]
     # Channel width [m]
     chan_w =    [0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001509, 0.001217, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001227, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575]  # Array of channel widths [m] 
     # Channel height [m]
@@ -1560,12 +1569,12 @@ def main():
     #convert to SI units
     s = dx*0.0254 # Linear distance hydrogen has flowed since entering the cooling channels [m] (summation of dx)
     xp_m = [x*0.0254 for x in xp_m] # Convert to SI units [m]
-    print(s, xp_m, yp_m)
     T_cw = 510 # Initial guess for coolant wall temperature [K]
     T_hw = 640 # Initial guess for hot wall temperature [K]
     deltaT = 20 # Finness of the newtonian method
-
-    xp = xp_m[-1] # Distance from injector [inch]
+    
+    xp = xp_m[-1] # Distance from injector [m]
+    
     yp = yp_m[-1] # Dependent variables [M^2, P, T] (Section 5.3 results)
     T_LH2_array = np.zeros(len(xp_m)) # Array to store liquid hydrogen temperature
     P_LH2_array = np.zeros(len(xp_m)) # Array to store liquid hydrogen pressure
@@ -1667,16 +1676,20 @@ def main():
         # Calculate transport properties
         visc = [] # Viscosity of the mixture
         therm = [] # Thermal conductivity of the mixture
+        prandtlnum = [] # Prandtl number of the mixture
         for y in yp_m:
             T = y[2]
             v, t = calc_gas_tranport_properties(T, engine_RS25.molecules, engine_RS25.molecular_mass,engine_RS25. molecular_fraction)
+            Cp = calc_gas_specific_heat(T, engine_RS25.molecules, engine_RS25.molecular_mass, engine_RS25.molecular_fraction)
+            Pr = (Cp*v)/t
+            prandtlnum.append(Pr)
             visc.append(v)
             therm.append(t)
-        create_plot([xp*0.0254 for xp in xp_m], [v*1E-7 for v in visc], "Distance from Injector [m]", "Viscosity [Pa s]", "Viscosity vs Distance from Injector")
-        create_plot([xp*0.0254 for xp in xp_m], [t*1E-4 for t in therm], "Distance from Injector [m]", "Thermal Conductivity [W/mK]", "Thermal Conductivity vs Distance from Injector")
-
-        print(calc_gas_tranport_properties(3595.63, engine_RS25.molecules, engine_RS25.molecular_mass, engine_RS25.molecular_fraction))
-        print(calc_gas_specific_heat(3595.63, engine_RS25.molecules, engine_RS25.molecular_mass, engine_RS25.molecular_fraction))
+        create_plot([xp for xp in xp_m], [v for v in visc], "Distance from Injector [m]", "Viscosity [Pa s]", "Viscosity vs Distance from Injector")
+        create_plot([xp for xp in xp_m], [t for t in therm], "Distance from Injector [m]", "Thermal Conductivity [W/mK]", "Thermal Conductivity vs Distance from Injector")
+        create_plot([xp for xp in xp_m], [Pr for Pr in prandtlnum], "Distance from Injector [m]", "Prandtl Number", "Prandtl Number vs Distance from Injector")
+        print(calc_gas_tranport_properties(2500, engine_RS25.molecules, engine_RS25.molecular_mass, engine_RS25.molecular_fraction))
+        print(calc_gas_specific_heat(2500, engine_RS25.molecules, engine_RS25.molecular_mass, engine_RS25.molecular_fraction))
 
         # Calculate specific heat of gas
         Cp_array = [] # Specific heat of the gas
