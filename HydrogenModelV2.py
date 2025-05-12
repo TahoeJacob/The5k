@@ -585,7 +585,7 @@ def main():
 
     h, rho, Cp, Cv = hydrogen_thermodynamics(P_desired, rho_guess, paraPercent, T)
 
-    print(f'Temperature: {T} K \n Pressure: {P_desired} Pa \n Density: {rho} kg/m^3 \n Enthalpy: {h} kJ/kg  \n Isobaric Heat Capacity: {Cp} kJ/(kg*K) \n Isochoric Heat Capacity: {Cv} kJ/(kg*K)')
+    #print(f'Temperature: {T} K \n Pressure: {P_desired} Pa \n Density: {rho} kg/m^3 \n Enthalpy: {h} kJ/kg  \n Isobaric Heat Capacity: {Cp} kJ/(kg*K) \n Isochoric Heat Capacity: {Cv} kJ/(kg*K)')
     #paraTemp, paraPercent = paraPercentFunction()
     
     # print(para_fraction(150))

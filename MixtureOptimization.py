@@ -54,8 +54,8 @@ def calc_exit_mach_num(area_ratio, gam, M_e):
     # M_e - type: float - exit mach number initial guess
 
     def equation(Me, gam, area_ratio):
-        #return ((specific_heat_ratio+1)/2)**(-c) * ((1 + ( (specific_heat_ratio-1)/2) * (M_e**2))/M_e)**c - area_ratio
-        return  (((gam+1)/2)**(-((gam+1)/(gam-1)/2)))* (1 / Me) * (1 + Me**2 * (gam-1)/2)**((gam+1)/(gam-1)/2) - area_ratio
+        # Equation 5.1.1 from cryo-rocket.com/flow-model/5.1-ltmcc-geometry/
+        return  (1/Me) * ( (1+((gam-1)/2)*Me**2)/(1+((gam-1)/2)) )**((gam+1)/(2*(gam-1))) - area_ratio  
         
     return scipy.fsolve(equation, M_e, args=(gam, area_ratio))           
     
@@ -233,10 +233,11 @@ def engine_geometry(engine_RS25, showPlots):
     
     # Determine exit area for RS25
     A_e = A_e_array[position_65[0]]
+    
     if showPlots:
         print(f'Exit Diamter: {2*A_e/np.pi} m \n Throat Diameter {2*np.sqrt(A_t/np.pi)} m \n Chamber Diameter: {2*np.sqrt(A_c/np.pi)} m \n Chamber Length: {L_c} m \n Chamber Volume: {V_c} m3')
     
-
+    
     if showPlots:
         create_plot(area_ratio_array, M_e_array, 'Area Ratio', 'Exit Mach Number', 'Exit Mach Number vs Area Ratio')
         create_plot(area_ratio_array, P_e_array, 'Area Ratio', 'Exit Pressure [Pa]', 'Exit Pressure vs Area Ratio')
@@ -253,12 +254,14 @@ def display_engine_geometry(x_array, A_c, A_t, A_e, L_c):
     # A_c - type: float - chamber area [m^2]
     # A_t - type: float - throat area [m^2]
     # A_e - type: float - exit area [m^2]
-    # L_c - type: float - chamber length [inch]
+    # L_c - type: float - chamber length [m]
 
     # Convert to inch
-    D_c = 2*np.sqrt(A_c/np.pi)*39.3701 # Calculate chamber diameter [m]
-    D_t = 2*np.sqrt(A_t/np.pi)*39.3701# Calculate throat diameter [m]
-    D_e = 2*np.sqrt(A_e/np.pi)*39.3701# Calculate exit diameter [m]
+    D_c = 2*np.sqrt(A_c/np.pi)*39.3701 # Calculate chamber diameter [inch]
+    D_t = 2*np.sqrt(A_t/np.pi)*39.3701# Calculate throat diameter [inch]
+    D_e = 2*np.sqrt(A_e/np.pi)*39.3701# Calculate exit diameter [inch]
+    L_c = L_c * 39.3701 # Calculate chanber length [inch]
+
 
     # Calculate expansion ratio
     expansion_ratio = A_e/A_t
@@ -314,9 +317,9 @@ def display_engine_geometry(x_array, A_c, A_t, A_e, L_c):
             r_array.append(r_t)
     
     # Convert r_array and x_array to meters
-    r_array = np.array(r_array) * 0.0254
-    x_array = np.array(x_array) * 0.0254
-    create_plot(x_array[:len(r_array)], r_array, 'Distance from Injector [m]', 'Radius [m]', 'Radius vs Distance from Injector')
+    r_array = np.array(r_array) #* 0.0254
+    x_array = np.array(x_array) #* 0.0254
+    create_plot(x_array[:len(r_array)], r_array, 'Distance from Injector [inch]', 'Radius [minch]', 'Radius vs Distance from Injector')
     return None
 
 # Function to calculate radius of chamber based off x
@@ -388,8 +391,6 @@ def calc_radius(x, A_c, A_t, A_e, L_c):
     # r is in [inch]
     return r
     
-  
-    #return r*0.0254 # Return in m 
 
 # Function which outlines ODE for local mach number squarred
 def dN_dx (x, y, h, keydata):
@@ -1127,7 +1128,7 @@ def calc_qgas(x, y, dx, T_hw, Ncc, engine_geometry, engine_data):
     
     # Calculate heat transfer from gas to wall
     q_gas = h_gas*A_gas*(T_aw - T_hw)
-    print("H_gas",h_gas)
+    # print("H_gas",h_gas)
     return q_gas
 
 # function which calculate heat transfer from hot wall to cold wall 6.1.2
@@ -1212,10 +1213,10 @@ def calc_qH2(x, dx, s, T_cw, T_LH2, P_LH2, Ncc, engine_geometry, engine_data):
     
     # Calculate Nu Seems low
     Nu = ((f/8)*Re*Pr*(T_LH2/T_cw)**(0.55)) / (1 + ((f/8)**0.55)*(B - 8.48)) * C1*C2*C3
-    print(((f/8)*Re*Pr*(T_LH2/T_cw)**(0.55)) / (1 + ((f/8)**0.55)*(B - 8.48)), C1, C2,C3)
+    # print(((f/8)*Re*Pr*(T_LH2/T_cw)**(0.55)) / (1 + ((f/8)**0.55)*(B - 8.48)), C1, C2,C3)
     # Calculate h_LH2 Equation 6.1.7
     h_LH2 = (Nu*therm_LH2)/Dh
-    print("h_LH2",h_LH2, "Nusselt", Nu, "Dh [m]", Dh, "Thermal Conductivity [W/m^2*K]", therm_LH2, "Cp [W/kg*K]", Cp, "Pr", Pr, "eta_LH2 [Pa-s]", eta_LH2, "T_LH2", T_LH2, "P_LH2", P_LH2)
+    # print("h_LH2",h_LH2, "Nusselt", Nu, "Dh [m]", Dh, "Thermal Conductivity [W/m^2*K]", therm_LH2, "Cp [W/kg*K]", Cp, "Pr", Pr, "eta_LH2 [Pa-s]", eta_LH2, "T_LH2", T_LH2, "P_LH2", P_LH2)
     #print(h_LH2, Nu, C1, C2, C3, ((f/8)*Re*Pr*(T_LH2/T_cw)**(0.55)) / (1 + ((f/8)**0.55)*(B - 8.48)))
     #h_LH2 = 20000
     # Calculate equation 6.1.16 for channel temperature profile
@@ -1489,14 +1490,17 @@ def f2(T_cw, T_hw, T_LH2, P_LH2, xp, yp, dx, s, Ncc_RS25, engine_channels, engin
 
 def main():
     # Main function
-    # Constants
+    # This function will be used to run the calculation for determining if the engine is thermodynamically stable. All calculations will be done using SI units
+    '''
+    Constants
+    '''
     gam_RS25 = 1.19346 # Specific heat ratio from CEA
     c_star_RS25 = 2300 # Characteristic velocity in m/s from CEA
     P_c_RS25 = 19.79E6 # Chamber pressure in Pascals from CEA
     T_c_RS25 = 3589 # Chamber temperature in Kelvin from CEA
     F_Vac_RS25 = 2184076.8131 # Vacuum thrust in lbs from CEA
     mdot_LH2_RS25 = 13.5 # kg/s Calculated 
-    M_c_RS25 = 0.26085 #0.26412 # Injector mach number guessed
+    M_c_RS25 = 0.26085 # For 24.23 inch  #0.26712 for  135.5 #0.26412 # Injector mach number guessed using function calc_flow_data and testfile section 1
     k_RS25 = 316 # W/m*K Thermal conductivity of chamber wall
     Ncc_RS25 = 430.0 # Number of coolant channels guessed
     showPlots = False # Boolean to show plots
@@ -1505,6 +1509,9 @@ def main():
     molecular_mass_RS25 = [2.01588E-3, 31.9988E-3, 18.01528E-3, 17.00734E-3, 1.00794E-3, 15.9994E-3] # Molecular masses of combustion gases [Kg]
     molecular_fraction_RS25 =  [0.2517, 0.0074, 0.6724, 0.036, 0.02829, 0.004] # from Table 4.5.4  # Molecular fractions of combustion gases  [0.2516, 0.00235, 0.66808, 0.04062, 0.0331, 0.00407] from Table 3.3.2
     
+    '''
+    Calculate the enginer geometry
+    '''
     # Create engine data object
     engine_RS25 = EngineData(gam_RS25, c_star_RS25, M_c_RS25, P_c_RS25, T_c_RS25, F_Vac_RS25, k_RS25, molecules_RS25, molecular_mass_RS25, molecular_fraction_RS25)
 
@@ -1524,45 +1531,21 @@ def main():
     # Calculate the engine geometry based off CEA data
 
     A_c, A_t, A_e, L_c = engine_geometry(engine_RS25, showPlots) # returns area of injector, throat, exit, and chamber length all in [m^2, m^2, m^2 m] respectively
- # Ensure calc_radius is defined and all variables (x_j, chan_w, etc.) are of the same length
-    fig, ax1 = plt.subplots(figsize=(10, 6))
-    
-    # Plot the channel geometry data on the left y-axis
-    ax1.plot(x_j, [w*1000 for w in chan_w], label="Channel Width", color="blue")
-    ax1.plot(x_j, [h*1000 for h in chan_h], label="Channel Height", color="green")
-    ax1.plot(x_j, [t*1000 for t in chan_t], label="Channel Thickness", color="orange")
-    ax1.plot(x_j, [l*1000 for l in chan_land], label="Channel Land", color="red")
-    ax1.set_ylim(0, 7)
-    ax1.set_xlabel("Distance from Injector [m]")
-    ax1.set_ylabel("Channel Geometry [m]")
-    ax1.set_title("Channel Geometry vs Distance from Injector")
-
-    # Create a second y-axis for the radius plot
-    ax2 = ax1.twinx()
-    ax2.plot(x_j, [2.54*calc_radius(x*39.37, A_c, A_t, A_e, L_c) for x in x_j], label="Radius", color="purple")
-    ax2.set_ylabel("Radius [m]")
-    ax2.set_ylim(0, 50)
-
-    # Combine legends from both axes
-    ax1.legend(loc="upper left")
-    ax2.legend(loc="upper right")
-
-    # Show grid and display the plot
-    ax1.grid(True)
-    ax1.set_xlim(0, 0.6)
-    plt.show()
 
     # Channel wall roughness 
     e = 2.5E-7 # Narloy Z [m]
 
     # Create engine channels object
-    engine_channels = EngineChannels(x_j, A_c[0], A_t[0], A_e[0], L_c[0], e, chan_w, chan_h, chan_t, chan_land, mdot_LH2_RS25)
+    engine_channels = EngineChannels(x_j, A_c[0], A_t[0], A_e[0], L_c[0], e, chan_w, chan_h, chan_t, chan_land, mdot_LH2_RS25) # All lists are in SI units x_j [m], A_c [m], A_t [m], A_e [m], L_c [m], e [m], chan_w [m], chan_h [m], chan_t [m], chan_land [m], mdot_LH2 [kg/s]
 
+    '''
+    Calculate first thermodynamic solution using the isentropic assumption. This will be used to calculate the initial conditions for the ODE solver.
+    '''
     # Initial conditons for thermal analysis set F and Q to zero for isentropic condition.
     dF_dx = 0 # Thrust gradient
     dQ_dx = 0 # Heat transfer gradient 
     gam = engine_RS25.gam # Specific heat ratio constant from CEA
-    M_c = engine_RS25.M_c # Injector mach number constant from CEA
+    M_c = engine_RS25.M_c # Injector mach number constant from calculation
     P_c = engine_RS25.P_c # Chamber pressure constant from CEA
     T_c = engine_RS25.T_c # Chamber temperature constant from CEA
     Cp = 1	 # Specific heat at constant pressure in J/KgK NOTE THIS IS A PLACEHOLDER CALCULATED BY HydrogenModelV2.py
@@ -1571,11 +1554,13 @@ def main():
 
     # Key data
     keydata = [engine_channels, gam, Cp, dF_dx, dQ_dx] # Key data to pass to ODE solver
-    
+
     # Calculate flow data (Section 5.3 results) 
-    dx, xp_m, yp_m = calc_flow_data(M_c_RS25, P_c, T_c, keydata)  # Corrected the function call with M_c_RS25
-    s = dx # Linear distance hydrogen has flowed since entering the cooling channels [inch] (summation of dx)
- 
+    dx, xp_m, yp_m = calc_flow_data(M_c_RS25, P_c, T_c, keydata)  # Returns imperial units of form dx [inch], xp [inch], yp [N, P, T] Mach^2, [Pa], [K]
+    #convert to SI units
+    s = dx*0.0254 # Linear distance hydrogen has flowed since entering the cooling channels [m] (summation of dx)
+    xp_m = [x*0.0254 for x in xp_m] # Convert to SI units [m]
+    print(s, xp_m, yp_m)
     T_cw = 510 # Initial guess for coolant wall temperature [K]
     T_hw = 640 # Initial guess for hot wall temperature [K]
     deltaT = 20 # Finness of the newtonian method
@@ -1673,9 +1658,9 @@ def main():
     #     if i == 2:
     #         break
     # Test transport propertie stuff
-    create_plot([xp*0.0254 for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
-    create_plot([xp*0.0254 for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
-    create_plot([xp*0.0254 for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
+    create_plot([xp for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
+    create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
+    create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
     
     showPlots = False
     if showPlots:

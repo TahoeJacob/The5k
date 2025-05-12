@@ -110,26 +110,57 @@ def main():
         print("x = ", xp_m[i], "y = ", yp_m[i])
 
 
-
+    #++++++++++++++++++++++++++++++++++++++++++++
+    # SECTION 1
+    #++++++++++++++++++++++++++++++++++++++++++++
     # Code which calculates the injector mach number which works best for initial isnetropic solution
     # Calculate flow data (Section 5.3 results) 
-    # vale = np.arange(0.22790, 0.27001, 0.00001)
-    # potential_sol = []
-    # vale = [0.26085]
-    # # Initial loop which will be used to calculate first heat transfer data
-    # for M_c_RS25 in vale:
-    #     # Assuming calc_flow_data function is defined elsewhere and returns the relevant values
-    #     dx, xp_m, yp_m = calc_flow_data(M_c_RS25, P_c, T_c, keydata)  # Corrected the function call with M_c_RS25
-    #     print(M_c_RS25)
-    #     if np.sqrt(yp_m[np.argmax([t[0] for t in yp_m])][0]) > 1.0:  # If the maximum Mach number is greater than 1
-    #         index = np.argmax([t[0] for t in yp_m])  # Extract the index of largest value from the yp_m tuple array
-    #         print("above Mach 1", M_c_RS25, index)
-    #         if index > len(xp_m) - 30:  # Check if the index is within the last 30 values
-    #             potential_sol.append(M_c_RS25)
+    vale = np.arange(0.22790, 0.27001, 0.00001)
+    potential_sol = []
+    vale = [0.26085]
+    # Initial loop which will be used to calculate first heat transfer data
+    for M_c_RS25 in vale:
+        # Assuming calc_flow_data function is defined elsewhere and returns the relevant values
+        dx, xp_m, yp_m = calc_flow_data(M_c_RS25, P_c, T_c, keydata)  # Corrected the function call with M_c_RS25
+        print(M_c_RS25)
+        if np.sqrt(yp_m[np.argmax([t[0] for t in yp_m])][0]) > 1.0:  # If the maximum Mach number is greater than 1
+            index = np.argmax([t[0] for t in yp_m])  # Extract the index of largest value from the yp_m tuple array
+            print("above Mach 1", M_c_RS25, index)
+            if index > len(xp_m) - 30:  # Check if the index is within the last 30 values
+                potential_sol.append(M_c_RS25)
 
-    # print(potential_sol)
+    print(potential_sol)
 
 
+    #++++++++++++++++++++++++++++++++++++++++++++
+    # SECTION 2
+    #++++++++++++++++++++++++++++++++++++++++++++
+    # Ensure calc_radius is defined and all variables (x_j, chan_w, etc.) are of the same length
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+    
+    # Plot the channel geometry data on the left y-axis
+    ax1.plot(x_j, [w*1000 for w in chan_w], label="Channel Width", color="blue")
+    ax1.plot(x_j, [h*1000 for h in chan_h], label="Channel Height", color="green")
+    ax1.plot(x_j, [t*1000 for t in chan_t], label="Channel Thickness", color="orange")
+    ax1.plot(x_j, [l*1000 for l in chan_land], label="Channel Land", color="red")
+    ax1.set_ylim(0, 7)
+    ax1.set_xlabel("Distance from Injector [m]")
+    ax1.set_ylabel("Channel Geometry [m]")
+    ax1.set_title("Channel Geometry vs Distance from Injector")
+
+    # Create a second y-axis for the radius plot
+    ax2 = ax1.twinx()
+    ax2.plot(x_j, [2.54*calc_radius(x*39.37, A_c, A_t, A_e, L_c) for x in x_j], label="Radius", color="purple")
+    ax2.set_ylabel("Radius [m]")
+    ax2.set_ylim(0, 50)
+
+    # Combine legends from both axes
+    ax1.legend(loc="upper left")
+    ax2.legend(loc="upper right")
+
+    # Show grid and display the plot
+    ax1.grid(True)
+    ax1.set_xlim(0, 0.6)
     return None
 
 main()
