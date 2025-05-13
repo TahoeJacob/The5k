@@ -1076,7 +1076,7 @@ def calc_qgas(x, y, dx, T_hw, Ncc, engine_geometry, engine_data):
 
     # Calculate free stream temperature
     T_free_stream = T_stag/(1+((gam-1)/2) *N)
-    
+
     # Calculate t star (reference temperature) to evaluate eta and llambda
     T_star = T_free_stream*(1 + 0.032*(N) + 0.58*((T_hw/T_free_stream) - 1)) 
 
@@ -1126,10 +1126,9 @@ def calc_qgas(x, y, dx, T_hw, Ncc, engine_geometry, engine_data):
     h_gas = 0.026/(D_t**0.2) * (((eta**0.2)*Cp)/(Pr**0.6)) * ((P_stag/c_star)**0.8) * ((D_t/Ru)**0.1) * ((A_t/A_x)**0.9) * Omega
     # Calculate adiabatic wall temperature
     T_aw = T_stag*( (1 + (Pr**0.33) * ((gam-1)/2) * (M**2)) / (1 + ((gam-1)/2) * (M**2)) )
-    
     # Calculate heat transfer from gas to wall
     q_gas = h_gas*A_gas*(T_aw - T_hw)
-    print("X", x, "P stag", P_stag, "P_static", Pc, "T Stag", T_stag, "T Static", Ts,  "H_gas",h_gas, "A_gas", A_gas, "T_aw", T_aw, "T_hw", T_hw, "q_gas", q_gas)
+    print("X", x, "P stag", P_stag, "P_static", Pc, "T Stag", T_stag, "T Static", Ts,  "h_gas",h_gas, "A_gas", A_gas, "T_aw", T_aw, "T_hw", T_hw, "q_gas", q_gas)
     return q_gas
 
 # function which calculate heat transfer from hot wall to cold wall 6.1.2
@@ -1567,14 +1566,14 @@ def main():
     # Calculate flow data (Section 5.3 results) 
     dx, xp_m, yp_m = calc_flow_data(M_c_RS25, P_c, T_c, keydata)  # Returns imperial units of form dx [inch], xp [inch], yp [N, P, T] Mach^2, [Pa], [K]
     #convert to SI units
-    s = dx*0.0254 # Linear distance hydrogen has flowed since entering the cooling channels [m] (summation of dx)
+    dx = dx*0.0254 # Step size [m]
+    s = dx # Linear distance hydrogen has flowed since entering the cooling channels [m] (summation of dx)
     xp_m = [x*0.0254 for x in xp_m] # Convert to SI units [m]
     T_cw = 510 # Initial guess for coolant wall temperature [K]
     T_hw = 640 # Initial guess for hot wall temperature [K]
     deltaT = 20 # Finness of the newtonian method
-    
+    print(dx)
     xp = xp_m[-1] # Distance from injector [m]
-    
     yp = yp_m[-1] # Dependent variables [M^2, P, T] (Section 5.3 results)
     T_LH2_array = np.zeros(len(xp_m)) # Array to store liquid hydrogen temperature
     P_LH2_array = np.zeros(len(xp_m)) # Array to store liquid hydrogen pressure
