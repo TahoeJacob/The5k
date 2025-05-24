@@ -6,7 +6,7 @@ import scipy.linalg as linalg
 import os 
 import cantera as ct
 from HydrogenModelV2 import hydrogen_thermodynamics
-from HydrogenModelV2 import para_fraction\
+from HydrogenModelV2 import para_fraction
 
 
 # Global Constants
