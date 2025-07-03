@@ -11,7 +11,6 @@ from HydrogenModelV2 import para_fraction
 # Import formatted data in excel format. Use this to complete data analaysis
  
 
-# Import formatted data in excel format. Use this to complete data analaysis
 # Import excel file
 # df = pd.read_excel('CEAParsed.xlsx')
 
@@ -33,21 +32,6 @@ def create_plot(x_axis,y_axis, x_label, y_label, title):
     plt.xlabel(f'{x_label}')
     plt.ylabel(f'{y_label}')
     plt.title(f'{title}')
-    #plt.gca().yaxis.set_major_formatter('{:.1e}'.format)
-    stringStart = 'X:{:.2f}, Y:{:.3f}'.format(float(x_axis[0]), float(y_axis[0]))
-    stringEng = 'X:{:.2f}, Y:{:.3f}'.format(float(x_axis[-1]), float(y_axis[-1]))
-    plt.annotate(stringStart,
-                xy=(x_axis[0], y_axis[0]), xycoords="data",
-                xytext=(100,10), textcoords="offset points",
-                va="center", ha="center",
-                bbox=dict(boxstyle="round", fc="w"),
-                arrowprops=dict(arrowstyle="->"))
-    plt.annotate(stringEng,
-                xy=(x_axis[-1], y_axis[-1]), xycoords="data",
-                xytext=(-100,10), textcoords="offset points",
-                va="center", ha="center",
-                bbox=dict(boxstyle="round", fc="w"),
-                arrowprops=dict(arrowstyle="->"))
     plt.grid(True)
     texts = [
         plt.annotate(f"{x_axis[0]}, {y_axis[0]}", xy=(x_axis[0], y_axis[0]), ha='center', bbox=dict(boxstyle="round", fc="w")),
@@ -183,12 +167,6 @@ def engine_geometry(gam, P_c, T_c, F_Vac, showPlots):
     # Last step is to calculate mass flow rate with respect to area ratio
     m_dot_array = [] # Create array to store mass flow rates
 
-    # Extract engine class parameters
-    gam = engine_RS25.gam # Specific heat ratio
-    P_c = engine_RS25.P_c # Chamber pressure [Pa]
-    T_c = engine_RS25.T_c # Chamber temperature [K]
-    F_Vac = engine_RS25.F_Vac # Vacuum thrust [N]
-
     # Iterate through all area ratios 
     for area_ratio in area_ratio_array:
         # Calculate exit mach number for given area ratio
@@ -266,14 +244,12 @@ def engine_geometry(gam, P_c, T_c, F_Vac, showPlots):
     # A_c - type: float - chamber area [m^2]
     # A_t - type: float - throat area [m^2]
     # A_e - type: float - exit area [m^2]
-    # L_c - type: float - chamber length [m]
+    # L_c - type: float - chamber length [inch]
 
     # Convert to inch
-    D_c = 2*np.sqrt(A_c/np.pi)*39.3701 # Calculate chamber diameter [inch]
-    D_t = 2*np.sqrt(A_t/np.pi)*39.3701# Calculate throat diameter [inch]
-    D_e = 2*np.sqrt(A_e/np.pi)*39.3701# Calculate exit diameter [inch]
-    L_c = L_c * 39.3701 # Calculate chanber length [inch]
-
+    D_c = 2*np.sqrt(A_c/np.pi)*39.3701 # Calculate chamber diameter [m]
+    D_t = 2*np.sqrt(A_t/np.pi)*39.3701# Calculate throat diameter [m]
+    D_e = 2*np.sqrt(A_e/np.pi)*39.3701# Calculate exit diameter [m]
 
     # Calculate expansion ratio
     expansion_ratio = A_e/A_t
@@ -329,9 +305,9 @@ def engine_geometry(gam, P_c, T_c, F_Vac, showPlots):
             r_array.append(r_t)
     
     # Convert r_array and x_array to meters
-    r_array = np.array(r_array) #* 0.0254
-    x_array = np.array(x_array) #* 0.0254
-    create_plot(x_array[:len(r_array)], r_array, 'Distance from Injector [inch]', 'Radius [minch]', 'Radius vs Distance from Injector')
+    r_array = np.array(r_array) * 0.0254
+    x_array = np.array(x_array) * 0.0254
+    create_plot(x_array[:len(r_array)], r_array, 'Distance from Injector [m]', 'Radius [m]', 'Radius vs Distance from Injector')
     return None
 
 # Function to display engine geometry 2D
@@ -378,11 +354,11 @@ def calc_radius(x, A_c, A_t, A_e, L_c):
     # Calculate expansion ratio
     expansion_ratio = A_e/A_t
 
-    # Determine radius of throat in [inch]
+    # Determine radius of throat in [m]
     R_T = D_t/2
 
     # Define key constants for RS25 engine @TODO need to replace with actual values for own engine
-    L_e = 5.339 # Length before chamber starts contracting [inch]
+    L_e = 5.339 # Length before chamber starts contracting [m]
     theta_1 = 25.4157 # Angle of contraction [degrees]
     theta_D = 37 # Angle of expansion [degrees]
     alpha =  5.3738 # half-angle of the nozzle [degrees]
@@ -428,6 +404,18 @@ def calc_radius(x, A_c, A_t, A_e, L_c):
         r = r_t
     return r*0.0254 # Convert to meters and return
     
+  
+    return r*0.0254 # Return in m 
+
+# Function to calculate the central finite difference
+def central_finite_difference(func, x, h, *args):
+    # Inputs:
+    # func - type: function - function to calculate
+    # x - type: float - x value
+    # h - type: float - step size
+    # args - type: list - arguments to pass to function
+
+    return (func(x+h, *args) - func(x-h, *args))/(2*h)
 
 # Function which outlines ODE for local mach number squarred
 def dN_dx (x, y, h, m, keydata):
@@ -442,7 +430,6 @@ def dN_dx (x, y, h, m, keydata):
     N = y[0] # Local mach number squared
     P = y[1] # Local pressure
     T = y[2] # Local temperature
-    engine_channels = keydata[0]
 
     # Key data
     A_c = keydata[0] # Area injector [m^2]
@@ -455,8 +442,8 @@ def dN_dx (x, y, h, m, keydata):
     dQ_dx = keydata[7][m]
 
     # Calculate area at x 
-    A = np.pi* (engine_channels.get_radius_inch(x))**2
-    dA_dx = (np.pi*engine_channels.get_radius_inch(x+h)**2 - np.pi*engine_channels.get_radius_inch(x-h)**2)/(2*h)
+    A = np.pi* (calc_radius(x, A_c, A_t, A_e, L_c))**2
+    dA_dx = (np.pi*calc_radius(x+h, A_c, A_t, A_e, L_c)**2 - np.pi*calc_radius(x-h, A_c, A_t, A_e, L_c)**2)/(2*h)
 
     dN_dx = ((N/(1-N)) * ((1+gam*N)/(Cp*T)) * dQ_dx  +  (N/(1-N))*((2 + (gam-1)*N)/(specificGasConstant*T))*dF_dx - (N/(1-N))*((2 + (gam-1)*N)/A)*dA_dx)
 
@@ -475,7 +462,6 @@ def dP_dx (x, y, h, m, keydata):
     N = y[0] # Local mach number squared
     P = y[1] # Local pressure
     T = y[2] # Local temperature
-    engine_channels = keydata[0]
 
     # Key data
     A_c = keydata[0] # Area injector [m^2]
@@ -488,8 +474,8 @@ def dP_dx (x, y, h, m, keydata):
     dQ_dx = keydata[7][m] # Derivative of heat with respect to x
     
     # Calculate area at x 
-    A = np.pi* (engine_channels.get_radius_inch(x))**2
-    dA_dx = (np.pi*engine_channels.get_radius_inch(x+h)**2 - np.pi*engine_channels.get_radius_inch(x-h)**2)/(2*h)
+    A = np.pi* (calc_radius(x, A_c, A_t, A_e, L_c))**2
+    dA_dx = (np.pi*calc_radius(x+h, A_c, A_t, A_e, L_c)**2 - np.pi*calc_radius(x-h, A_c, A_t, A_e, L_c)**2)/(2*h)
 
     dP_dx = (-(P/(1-N))*((gam*N)/(Cp*T))*dQ_dx - (P/(1-N))*((1+ (gam-1)*N)/(specificGasConstant*T))*dF_dx + (P/(1-N))*((gam*N)/A)*dA_dx)
     return dP_dx
@@ -507,7 +493,6 @@ def dT_dx (x, y, h, m, keydata):
     N = y[0] # Local mach number squared
     P = y[1] # Local pressure
     T = y[2] # Local temperature
-    engine_channels = keydata[0]
 
     # Key data
     A_c = keydata[0] # Area injector [m^2]
@@ -520,8 +505,8 @@ def dT_dx (x, y, h, m, keydata):
     dQ_dx = keydata[7][m] # Derivative of heat with respect to x
 
     # Calculate area at x 
-    A = np.pi* (engine_channels.get_radius_inch(x))**2
-    dA_dx = (np.pi*engine_channels.get_radius_inch(x+h)**2 - np.pi*engine_channels.get_radius_inch(x-h)**2)/(2*h)
+    A = np.pi* (calc_radius(x, A_c, A_t, A_e, L_c))**2
+    dA_dx = (np.pi*calc_radius(x+h, A_c, A_t, A_e, L_c)**2 - np.pi*calc_radius(x-h, A_c, A_t, A_e, L_c)**2)/(2*h)
 
 
     
@@ -585,6 +570,7 @@ def rk4(x, y, n, h, m, keydata):
     x = x+h # increment x by step size
     
     return x, y
+
 
 # Function to solve ODEs using RK4 method
 def integrator(x, y, n, h, xend, m, keydata):
@@ -732,16 +718,7 @@ def calc_tranport_properties(T, molecules, molecular_mass=None, molecular_fracti
 
 # Function to calculate the specific heat of the gas
 def calc_gas_specific_heat(T, molecules, molecular_mass, molecular_fraction):
-    """
-    Calculates the specific heat of a gas mixture.
-    Parameters:
-    - T (float): Temperature of the gas mixture in Kelvin.
-    - molecules (list): List of strings representing the elements in the gas mixture.
-    - molecular_mass (list): List of floats representing the molecular masses of the elements in the gas mixture.
-    - molecular_fraction (list): List of floats representing the mole fractions of the elements in the gas mixture.
-    Returns:
-    - Cp_mix (float): Specific heat of the gas mixture in J/mol.
-    """
+
 
     # Dictionary containing thermodynamic coefficients for different species of elements, c, b, r for 100 - 700, 700 - 2000, 2000 - 6000 K respectively
     # Containes coefficients A, B, C, D, E for calculating Cp 
@@ -756,7 +733,7 @@ def calc_gas_specific_heat(T, molecules, molecular_mass, molecular_fraction):
     "rH2O": [1.034972096E+06, -2.412698562E+03, 4.646110780E+00, 2.291998307E-03, -6.836830480E-07, 9.426468930E-11, -4.822380530E-15],
     "bH2": [4.078323210E+04, -8.009186040E+02, 8.214702010E+00, -1.269714457E-02, 1.753605076E-05, -1.202860270E-08, 3.368093490E-12],
     "rH2": [ 5.608128010E+05, -8.371504740E+02, 2.975364532E+00, 1.252249124E-03, -3.740716190E-07, 5.936625200E-11, -3.606994100E-15],
-    "bH": [0.000000000E+00, 0.000000000E+00, 2.500000000E+00, 0.000000000E+00, 0.000000000E+00, 0 ,0.000000000E+00],
+    "bH": [0.000000000E+00, 0.000000000E+00, 2.500000000E+00, 0.000000000E+00, 0.000000000E+00, 0.000000000E+00 ,0.000000000E+00],
     "rH":[6.078774250E+01, -1.819354417E-01, 2.500211817E+00, -1.226512864E-07,  3.732876330E-11,-5.687744560E-15, 3.410210197E-19]}
 
 
@@ -779,26 +756,17 @@ def calc_gas_specific_heat(T, molecules, molecular_mass, molecular_fraction):
             a3 = thermo_curve_dict[f'b{element}'][2] # extract a3
             a4 = thermo_curve_dict[f'b{element}'][3] # extract a4
             a5 = thermo_curve_dict[f'b{element}'][4] # extraft a5
-            a6 = thermo_curve_dict[f'b{element}'][5] # extract a6
-            a7 = thermo_curve_dict[f'b{element}'][6] # extract a7
+            a6 = thermo_curve_dict[f'r{element}'][5] # extract a6
+            a7 = thermo_curve_dict[f'r{element}'][6] # extract a7
 
         element_Cp.append((a1*(1/(T**2)) + a2*(1/(T)) + a3 + a4*T + a5*(T**2) + a6*(T**3) + a7*(T**4))*Ru) # Calculate specific heat of element in mixture
+    
     # Now calculate the specific heat of the mixture
-    Cp_mix = 0 # Specific heat of the mixture [J/kgK] 
-    num = 0 
-    den = 0
+    Cp_mix = 0 # Specific heat of the mixture [kJ/KgK] 
     for i in range(len(molecules)):
-        num += (molecular_fraction[i]*element_Cp[i])
-        den += (molecular_fraction[i]*molecular_mass[i])
-        #Cp_mix += (molecular_fraction[i]*element_Cp[i])/(molecular_fraction[i]*molecular_mass[i]) # Calculate specific heat of mixture in J/kgk
-        #print(f"T {T} [K], Molecule {molecules[i]}, Cp {element_Cp[i]}, fraction {molecular_fraction[i]}, mol mass {molecular_mass[i]}, Cp_mix {Cp_mix}")
-    Cp_mix = num/den
-    return Cp_mix # Return specific heat of mixture in J/kgk
+        Cp_mix += (molecular_fraction[i]*element_Cp[i]) # Calculate specific heat of mixture in kJ/KgK
 
-#-------------------------------------------------------------------
-# FUNCTION TO CALCULATE HEAT TRANSFER THROUGH COOLANT CHANNELS
-# ------------------------------------------------------------------
-
+    return Cp_mix # Return specific heat of mixture in J/molK
 # Function which outputs chamber inner surface area
 def calc_A_gas(dx, x, engine_info):
     # Inputs
@@ -895,20 +863,14 @@ def calc_T_aw(x, y, T_hw, T_star, engine_info):
     
     return T_aw
 
-# function which calculates the heat transfer from hot gas to wall Eqtn 6.1.1
-def calc_qgas(x, y, dx, T_hw, Ncc, engine_geometry, engine_data):
-    """
-    Calculate the heat transfer from gas to wall.
-    Parameters:
-    x (array): Distance from injector.[m]
-    y (array): Dependent variables [N, P, T] (Section 5.3 results). 
-    dx (float): Step size. [m]
-    Ncc (float): Number of coolant channels.
-    gam (float): Specific heat ratio calculated from CEA.
-    engine_geometry: Engine geometry data.
-    Returns:
-    tuple which contains T_cw, T_hw, q_H2, q_wall, q_gas.
-    """
+# function which calculates the heat transfer through the walls and coolant channels 
+def calc_heat_transfer(x, y, h, Ncc, keydata):
+    # Inputs
+    # x - type: array - distance from injector
+    # y - type: array - dependent variables [N, P, T]
+    # h - type: float - step size
+    # Ncc - type: float - number of coolant channels
+    # keydata - type: list - key data to pass to ODE solver contains array of radius and specific heat ratio A_c, A_t, A_e, L_c, gam, Cp, dF_dx, dQ_dx
 
     # Solve for Thw and Tcw using a multivariable newtonian method
 
@@ -1988,5 +1950,5 @@ def main():
         displayEngineGeometry2(xp_m, A_c, A_t, A_e, L_c) # Display the engine geometry and flow data
 
     plt.show()
-   
+
 main()
