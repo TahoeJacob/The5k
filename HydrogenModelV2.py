@@ -557,7 +557,7 @@ def hydrogen_thermodynamics(P_desired, rho_guess, paraPercent, T):
 
     helmholtz_output_para = Helmholtz(rho_guess, T, Tc, rho_c, Rs, 'P', coefficients)
     helmholtz_output_ortho = Helmholtz(rho_guess, T, Tc, rho_c, Rs, 'O', coefficients)
-    Cp = (helmholtz_output_para[5]*paraPercent + helmholtz_output_ortho[5]*(1-paraPercent))*1E3   # Specific heat at constant pressure [J/(kg*K)]
+    Cp = (helmholtz_output_para[5]*paraPercent + helmholtz_output_ortho[5]*(1-paraPercent)) *1E3   # Specific heat at constant pressure [J/(kg*K)]
     Cv = (helmholtz_output_para[6]*paraPercent + helmholtz_output_ortho[6]*(1-paraPercent))*1E3    # Specific heat at constant volume [J/(kg*K)]
     h = helmholtz_output_para[0]*paraPercent + helmholtz_output_ortho[0]*(1-paraPercent)    # Enthalpy [kJ/kg]
     #S = helmholtz_output_para[3]*paraPercent + helmholtz_output_ortho[3]*(1-paraPercent)    # Entropy [kJ/(kg * K)]
