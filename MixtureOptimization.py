@@ -929,7 +929,7 @@ def calc_q_gas(dx, x, y, T_hw, engine_info):
     heatflux= q_gas / A_gas  # [W/m^2]
 
 
-    return q_gas, heatflux
+    return q_gas, heatflux, h_gas
 
 # Calculate the Reynolds number
 def calc_reynoldsNumber(rho, u, D, v):
@@ -1611,7 +1611,7 @@ def newton_solve_temperatures(dx, x, y, s, T_LH2, P_LH2, engine_info,
     """
     def F(T):
         T_hw, T_cw = T
-        q_gas, heatflux = calc_q_gas(dx, x, y, T_hw, engine_info)
+        q_gas, heatflux, h_gas = calc_q_gas(dx, x, y, T_hw, engine_info)
         q_h2, T_LH2_new, P_LH2_new, dF_dx, h_H2, C3 = calc_q_h2(dx, x, y, s, T_cw, T_LH2, P_LH2, engine_info)
         q_wall = calc_q_wall(dx, x, y, T_hw, T_cw, engine_info)
 
@@ -1697,6 +1697,14 @@ def main():
     # Channel thickness [m]
     chan_t =    [0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889]  # Array of channel thicknesses from hot side to cold side [m]
 
+    # Channel width [m]
+    chan_w =    [0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001509, 0.001217, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001227, 0.001575, 0.001575, 0.001575]  # Array of channel widths [m] 
+    # Channel height [m]
+    chan_h =    [0.002489, 0.002489, 0.002489, 0.002489,  0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.003442, 0.004953, 0.004953, 0.004953, 0.004953, 0.005352, 0.006096, 0.006096, 0.006096] # Array of channel heights [m]
+    # Channel thickness [m]
+    chan_t =    [0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 00.000711, 0.000711, 0.0007119, 0.000889, 0.000889]  # Array of channel thicknesses from hot side to cold side [m]
+
+
     RU = 5.1527 * 0.0254 # Radius of contraction [inch]
     RD = 2.019 * 0.0254  # Radius of throat curve [inch]
 
@@ -1704,7 +1712,7 @@ def main():
     engine_info = EngineInfo(gam, C_star, M_c, P_c, T_c, Cp, F_Vac, Ncc, combustion_molecules, A_c[0], A_t[0], A_e[0], L_c[0], x_j, chan_land, chan_w, chan_h, chan_t, gas, mdot_LH2, e, k, mdot_chamber, RD, RU)
     
     # Display the channel geometry
-    # engine_info.displayChannelGeometry() # Display the engine channel geometry
+    engine_info.displayChannelGeometry() # Display the engine channel geometry
     
 
    
@@ -1722,9 +1730,12 @@ def main():
 
     dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, engine_info.M_c, engine_info.P_c, engine_info.T_c, keydata) # returns pressure, temperature, mach number throughout  entire engine at each x value (distance in m from injector) and step size in m
     
-    # create_plot([xp for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
-    # create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
-    # create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
+
+    xp_m = list(reversed(xp_m))
+    yp_m = list(reversed(yp_m))
+    create_plot([xp for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
+    create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
+    create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
 
 
 
@@ -1747,8 +1758,9 @@ def main():
     
     heatflux_hotside = np.zeros(array_length) # Heat flux on the hot side of the wall [W/m^2]
     q_h2_array = np.zeros(array_length) # Heat transfer through coolant channels [W]
+    q_gas_array = np.zeros(array_length) # Heat transfer from gas to wall [W]
     C3_array = np.zeros(array_length) # Heat transfer coefficient for liquid hydrogen in [W/m^2K]
-
+    h_gas_array = np.zeros(array_length) # Heat transfer coefficient for gas in [W/m^2K]
     # Initialize the first values of T_hw, T_cw, T_LH2, P_LH2
     T_hw = T_hw_init
     T_cw = T_cw_init
@@ -1776,7 +1788,7 @@ def main():
     # print(f'q_gas {q_gas} [W] \n q_h2 = {q_h2} [W] \n q_wall = {q_wall} [W] \n at x = {x} [m] with T_hw = {T_hw} [K] with T_cw = {T_cw} [K] \n T_LH2_new = {T_LH2} [K] \n P_LH2_new = {P_LH2} [Pa] \n dF_dx_val = {dF_dx_val} [N/m]')
 
     # Iterate through each x and y value in the combustion chamber and calculate the wall temperatures using Newton's method
-    for i, (x,y) in enumerate(zip(reversed(xp_m), reversed(yp_m))):
+    for i, (x,y) in enumerate(zip(xp_m, yp_m)):
         # Store the values for the current x value
         
         # Run the thermal analysis for current x value, run until q_gas, q_h2, and q_wall have converged by adjusting T_hw, T_cw
@@ -1787,7 +1799,7 @@ def main():
         
  
         # Calculate Heat Transfer Information based off convergence values, overwrite T_LH2 and P_LH2 with new values
-        q_gas,heatflux = calc_q_gas(dx, x, y, T_hw, engine_info)
+        q_gas,heatflux, h_gas = calc_q_gas(dx, x, y, T_hw, engine_info)
         q_h2, T_LH2, P_LH2, dF_dx_val, h_H2,C3 = calc_q_h2(dx, x, y, s, T_cw, T_LH2, P_LH2, engine_info) # Calculate heat transfer through coolant channels
         q_wall = calc_q_wall(dx, x, y, T_hw, T_cw, engine_info) # Calculate heat transfer through the wall
         
@@ -1804,8 +1816,8 @@ def main():
         q_h2_array[i] = q_h2 # Store the heat transfer through coolant channels [W]
         h_H2_array[i] = h_H2 # Store the heat transfer coefficient for liquid hydrogen in [W/m^2K]
         C3_array[i] = C3 # Store the heat transfer coefficient for liquid hydrogen in [W/m^2K]
-
-     
+        q_gas_array[i] = q_gas # Store the heat transfer from gas to wall [W]
+        h_gas_array[i] = h_gas # Store the heat transfer coefficient for gas in [W/m^2K]
 
         # print(f'q_gas: {q_gas} [W] \n q_h2 = {q_h2} [W] \n q_wall = {q_wall} [W] \n at x = {x} [m] with T_hw = {T_hw} [K] with T_cw = {T_cw} [K] \n T_LH2_new = {T_LH2} [K] \n P_LH2_new = {P_LH2} [Pa] \n T_LH2_new = {T_LH2 - T_LH2_array[-1] } [K] \n P_LH2_new = {P_LH2_array[-1] - P_LH2} [Pa] \n dF_dx = {dF_dx[i]} [N/m] \n dQ_dx = {dQ_dx[i]} [W-s/kg] \n')
         
@@ -1819,8 +1831,8 @@ def main():
 
     create_plot([x for x in xp_m], [T_LH2 for T_LH2 in reversed(T_LH2_array)], "Distance from Injector [m]", "T_LH2 [K]", "T_LH2 vs Distance from Injector")
     create_plot([x for x in xp_m], [P_LH2 for P_LH2 in reversed(P_LH2_array)], "Distance from Injector [m]", "P_LH2 [Pa]", "P_LH2vs Distance from Injector")
-    create_plot([x for x in xp_m], [h_H2 for h_H2 in h_H2_array], "Distance from Injector [m]", "T_cw [K]", "h_cold vs x Distance from Injector")
-    create_plot([x for x in xp_m], [C3 for C3 in C3_array], "Distance from Injector [m]", "C3 [W/m^2K]", "C3 vs Distance from Injector")
+    create_plot([x for x in xp_m], [h_H2 for h_H2 in reversed(h_H2_array)], "Distance from Injector [m]", "T_cw [K]", "h_cold vs x Distance from Injector")
+    create_plot([x for x in xp_m], [C3 for C3 in reversed(C3_array)], "Distance from Injector [m]", "C3 [W/m^2K]", "C3 vs Distance from Injector")
     # Plot T_hw and T_cw on the same plot for comparison
     plt.figure()
     plt.plot([x for x in xp_m], [T_cw for T_cw in reversed(T_cw_array)], label="T_cw [K]")
@@ -1830,11 +1842,13 @@ def main():
     plt.title("T_hw and T_cw vs Distance from Injector")
     plt.legend()
     plt.grid(True)
-    create_plot([x for x in xp_m], [qflux for qflux in heatflux_hotside], "Distance from Injector [m]", "heatflux [w/m^2]", "heatflux vs Distance from Injector")
-    create_plot([x for x in xp_m], [q_h2 for q_h2 in q_h2_array], "Distance from Injector [m]", "q_h2 [W]", "q_h2 vs Distance from Injector")
+    create_plot([x for x in xp_m], [qflux for qflux in reversed(heatflux_hotside)], "Distance from Injector [m]", "heatflux [w/m^2]", "heatflux vs Distance from Injector")
+    create_plot([x for x in xp_m], [q_h2 for q_h2 in reversed(q_h2_array)], "Distance from Injector [m]", "q_h2 [W]", "q_h2 vs Distance from Injector")
     create_plot([xp for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
     create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
     create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
+    create_plot([x for x in xp_m], [q_gas for q_gas in reversed(q_gas_array)], "Distance from Injector [m]", "q_gas [W]", "q_gas vs Distance from Injector")
+    create_plot([x for x in xp_m], [h_gas for h_gas in reversed(h_gas_array)], "Distance from Injector [m]", "h_gas [W/m^2K]", "h_gas vs Distance from Injector")
     plt.show()
 
     
@@ -1864,7 +1878,7 @@ def main():
 
         # Calculate Heat Transfer Information
         q_gas, heatflux = calc_q_gas(dx, x, y, T_hw, engine_info)
-        q_h2, C3 = calc_q_h2(dx, x, y, s, T_cw, T_LH2, P_LH2, engine_info) # Calculate heat transfer through coolant channels
+        q_h2, C3, h_gas = calc_q_h2(dx, x, y, s, T_cw, T_LH2, P_LH2, engine_info) # Calculate heat transfer through coolant channels
         q_wall = calc_q_wall(dx, x, y, T_hw, T_cw, engine_info) # Calculate heat transfer through the wall
 
         print(f'q_gas: {q_gas} [W] \n q_h2 = {q_h2} [W] \n q_wall = {q_wall} [W] \n at x = {x} [m] with T_hw = {T_hw} [K]')
