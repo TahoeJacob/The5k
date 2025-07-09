@@ -1703,6 +1703,7 @@ def main():
     e = 2.5E-7 # Channel wall roughness of Narloy Z [m]
     k = 316  # Thermal conductivity of Narloy Z [W/m*K] 
     mdot_LH2 = 13.2 # kg/s mass flow rate of the LH2 in the coolant channels. 
+    meltingpoint = 1000 # Melting point of inconel Z [K]
 
 
     # Define the molecules in the combustion gases and their molecular masses (Get this from CEA data)
@@ -1809,6 +1810,7 @@ def main():
     error_T_cw_array = np.zeros(array_length) # Error in coolant temperature at the injector [K]
     Dh_array = np.zeros(array_length) # Hydraulic diameter in the coolant channels [m]
     therm_LH2_array = np.zeros(array_length) # Thermal conductivity of liquid hydrogen in the coolant channels [W/mK]
+    melting_point_array = np.full(array_length, meltingpoint)  # Melting point array [K]
     T_hw_matrix = [[]]
     # Initialize the first values of T_hw, T_cw, T_LH2, P_LH2
     
@@ -1916,6 +1918,7 @@ def main():
     plt.figure()
     plt.plot([x for x in xp_m], [T_cw for T_cw in reversed(T_cw_array)], label="T_cw [K]")
     plt.plot([x for x in xp_m], [T_hw for T_hw in reversed(T_hw_array)], label="T_hw [K]")
+    plt.plot([x for x in xp_m], [meltingpoint for meltingpoint in reversed(melting_point_array)], label="Melting Point [K]", linestyle='--', color='red')
     plt.xlabel("Distance from Injector [m]")
     plt.ylabel("Temperature [K]")
     plt.title("T_hw and T_cw vs Distance from Injector")

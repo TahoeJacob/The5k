@@ -76,74 +76,13 @@ class RocketEngine:
         total_impulse = self.thrust * self.burn_time  # in N*s
         return total_impulse
 
-    def display_MR_curves(self, of_ratios, fuel_stroage_density, ox_storage_density, engine_name=None):
+    def display_MR_curves(self, of_ratios, engine_name=None):
         # Display plots of chamber temperature, mole fractions, specific heat ratios, C*, and Isp for given range of O/F ratios
-        
-        # Initialize lists to store performance parameters
-        chamberTemperatures = []
-        mole_fractions = []
-        specific_heat_ratios = []
-        cstar_values = []
-        Isp_values_fixed = [] # Isp values expansion ratio fixed at 69
-        ox_mass = []
-        fuel_mass = []
-        total_propellant_mass = []
-        propellent_volume = []
-        propellant_volume_ox = []
-        propellant_volume_fuel = []
-        Cf_values = [] # Thrust Coefficient values
 
-        I = self.calculate_total_impulse()  # Calculate total impulse for the engine
-
-
-        # Loop through each O/F ratio and calculate the performance parameters
-        for of in of_ratios:
-            chamberTemp, mole_frac, gamma, cstar, isp, Cf = self.calculate_performance(of)
-            chamberTemperatures.append(chamberTemp)
-            mole_fractions.append(mole_frac)
-            specific_heat_ratios.append(gamma)
-            Cf_values.append(Cf) # Thrust Coefficient
-            cstar_values.append(cstar)
-            Isp_values_fixed.append(isp)
-            m_tot = I/isp # Total required propellant mass for the engine
-            m_H2 = m_tot / (1 + of) # Mass of fuel (LH2)
-            m_O2 = m_tot/ ((1/of) + 1)
-            ox_mass.append(m_O2)  # Mass of oxidizer
-            fuel_mass.append(m_H2) # Mass of fuel
-            total_propellant_mass.append(m_tot)  # Total propellant mass
-            ox_volume = m_O2 / ox_storage_density  # Volume of oxidizer
-            fuel_volume = m_H2 / fuel_stroage_density
-            propellant_volume_ox.append(ox_volume)  # Volume of oxidizer
-            propellant_volume_fuel.append(fuel_volume)
-            propellent_volume.append(ox_volume+fuel_volume)  # Total volume of propellant
-
-
-
-        # Extract all unique species from the mole fractions
-        all_species = set()
-        for mf in mole_fractions:    
-            all_species.update(mf[1].keys()) # for each reactant, add it to the set of all species
-
-        all_species = sorted(all_species)
-
-        # Prepare data for plotting
-        species_mole_fractions = {species_molar_fraction: [] for species_molar_fraction in all_species}
-        mixture_molecular_weight = []
-        for mf in mole_fractions:
-            species_mole_weight = []
-            for species in all_species:
-                molar_fraction = mf[1].get(species)
-                molar_weight = mf[0].get(species)
-                if molar_fraction is not None: # If species exists in the mixture
-                    species_mole_weight.append(molar_weight*molar_fraction[0])
-                    species_mole_fractions[species].append(molar_fraction[0])
-                else:
-                    species_mole_fractions[species].append(0.0)
-            mixture_molecular_weight.append(sum(species_mole_weight))
-
+        of_data = self.extract_cea_output(of_ratios)  # Extract CEA output for the given O/F ratios
         # Plot Chamber Temperature vs O/F ratio (cryo-rocket.com figure 3.4.1)
         plt.figure(figsize=(8, 5))
-        plt.plot(of_ratios, chamberTemperatures, label='Flame Temperature (K)')
+        plt.plot(of_ratios, [data['T_c'] for data in of_data.values()], label='Flame Temperature (K)')
         plt.xlabel('O/F Ratio')
         plt.ylabel('Flame Temperature (K)')
         plt.title(f'{engine_name} Flame Temperature vs O/F Ratio')
@@ -153,29 +92,9 @@ class RocketEngine:
         plt.xlim(0, of_ratios[-1])
         plt.tight_layout()
 
-        # Plot mole fraction for each species (cryo-rocket.com figure 3.4.2)
-        plt.figure(figsize=(10, 6))
-        for species in all_species:
-            plt.plot(of_ratios, species_mole_fractions[species], label=species)
-        plt.xlabel('O/F Ratio')
-        plt.ylabel('Mole Fraction')
-        plt.title(f'{engine_name} Species Mole Fractions vs O/F Ratio')
-        plt.legend(loc='upper right', bbox_to_anchor=(1.25, 1.0), fontsize='small')
-        plt.grid(True)
-        plt.tight_layout()
-
-        # Plot mixture molecular weight (cryo-rocket.com figure 3.4.3)
-        plt.figure(figsize=(8, 5))
-        plt.plot(of_ratios, mixture_molecular_weight)
-        plt.xlabel('O/F Ratio')
-        plt.ylabel('Mixture Molecular Weight (g/mol)')
-        plt.title(f'{engine_name} Mixture Molecular Weight vs O/F Ratio')
-        plt.grid(True)
-        plt.tight_layout()
-
         # Plot specific heat ratio (cryo-rocket.com figure 3.4.4)
         plt.figure(figsize=(8, 5))
-        plt.plot(of_ratios, specific_heat_ratios)
+        plt.plot(of_ratios, [data['gamma'] for data in of_data.values()])
         plt.xlabel('O/F Ratio')
         plt.ylabel('Specific Heat Ratio (γ)')
         plt.title(f'{engine_name} Specific Heat Ratio vs O/F Ratio')
@@ -184,26 +103,16 @@ class RocketEngine:
 
         # Plot c* (cryo-rocket.com figure 3.4.5)
         plt.figure(figsize=(8, 5))
-        plt.plot(of_ratios, cstar_values)
+        plt.plot(of_ratios, [data['Cstar_c'] for data in of_data.values()])
         plt.xlabel('O/F Ratio')
         plt.ylabel('C* (m/s)')
         plt.title(f'{engine_name} Characteristic Velocity (C*) vs O/F Ratio')
         plt.grid(True)
         plt.tight_layout()
 
-        # Plot Thrust Coefficient Cf for fixed expansion and infinite expansion ratio (cryo-rocket.com figure 3.4.6)
-        plt.figure(figsize=(8, 5))
-        plt.plot(of_ratios, Cf_values, label=f'Cf of EPS {self.expansion_ratio}')
-        plt.xlabel('O/F Ratio')
-        plt.ylabel('Isp (sec)')
-        plt.title(f'{engine_name} Isp vs O/F Ratio')
-        plt.grid(True)
-        plt.legend()
-        plt.tight_layout()
-
         # Plot Isp for fixed expansion and infinite expansion ratio (cryo-rocket.com figure 3.4.6)
         plt.figure(figsize=(8, 5))
-        plt.plot(of_ratios, Isp_values_fixed, label='Isp')
+        plt.plot(of_ratios, [data['Isp_t'] for data in of_data.values()], label='Isp')
         #plt.plot(of_ratios, Cf_values_infinite, label='Infinite Expansion Ratio')
         plt.xlabel('O/F Ratio')
         plt.ylabel('Isp (sec)')
@@ -212,13 +121,29 @@ class RocketEngine:
         plt.legend()
         plt.tight_layout()
 
+        I = self.burn_time * self.thrust * self.num_engines  # Total impulse in N*s
+
+        for data in of_data.values():
+            tot_mass = I / (data['Isp_t'] * 9.81)
+            fuel_mass = tot_mass / (1 + data['OF_ratio'])
+            ox_mass = (data['OF_ratio']*tot_mass) / (data['OF_ratio'] + 1)
+            data['tot_mass'] = tot_mass
+            data['ox_mass'] = ox_mass
+            data['fuel_mass'] = fuel_mass
+            data['ox_volume'] = ox_mass / 1141
+            data['fuel_volume'] = fuel_mass / 70
+            data['propellant_volume'] = data['ox_volume'] + data['fuel_volume']
+
+                  
         # Plot propellant masses 
         plt.figure(figsize=(8, 5))
-        plt.plot(of_ratios, ox_mass, label='Oxidizer Mass (kg)')
-        plt.plot(of_ratios, fuel_mass, label='Fuel Mass (kg)')
-        plt.plot(of_ratios, total_propellant_mass, label='Total Propellant Mass (kg)')
+        plt.plot(of_ratios, [data['ox_mass'] for data in of_data.values()], label='Oxidizer Mass (kg)')
+        plt.plot(of_ratios, [data['fuel_mass'] for data in of_data.values()], label='Fuel Mass (kg)')
+        plt.plot(of_ratios, [data['tot_mass'] for data in of_data.values()], label='Total Propellant Mass (kg)')
         plt.xlabel('O/F Ratio')
         plt.ylabel('Mass (kg)')
+        plt.xlim(0, 8)
+        plt.ylim(0, 1.2E6)
         plt.title(f'{engine_name} Propellant Masses vs O/F Ratio')
         plt.grid(True)
         plt.legend()
@@ -226,12 +151,14 @@ class RocketEngine:
 
         # Plot propellant volume
         plt.figure(figsize=(8, 5))
-        plt.plot(of_ratios, propellent_volume, label='Propellant Volume (m^3)')
-        plt.plot(of_ratios, propellant_volume_ox, label='Oxidizer Volume (m^3)')
-        plt.plot(of_ratios, propellant_volume_fuel, label='Fuel Volume (m^3)')
+        plt.plot(of_ratios, [data['propellant_volume'] for data in of_data.values()], label='Propellant Volume (m^3)')
+        plt.plot(of_ratios, [data['ox_volume'] for data in of_data.values()], label='Oxidizer Volume (m^3)')
+        plt.plot(of_ratios, [data['fuel_volume'] for data in of_data.values()], label='Fuel Volume (m^3)')
         plt.xlabel('O/F Ratio')
         plt.ylabel('Volume (m^3)')
+        plt.xlim(0, 8)
         plt.title(f'{engine_name} Propellant Volume vs O/F Ratio')
+        plt.legend()
         plt.grid(True)
     
         plt.show()
@@ -239,27 +166,155 @@ class RocketEngine:
 
         pass
 
-def extract_cea_output(filename):
-    with open(filename, "r") as f:
-        lines = f.readlines()
+    def extract_cea_output(self, of_ratios):
+        # FUNCTION WORKSPACE
+        
+        # Create a dictionary to store the results for each O/F ratio
+        of_data = {}
 
-    # Define the blocks to extract
-    blocks_to_extract = [
-        ("Pinf/P", ["TRANSPORT PROPERTIES (GASES ONLY)", "WITH EQUILIBRIUM REACTIONS", "WITH FROZEN REACTIONS", "PERFORMANCE PARAMETERS", "MOLE FRACTIONS"]),
-        ("VISC,MILLIPOISE", ["WITH EQUILIBRIUM REACTIONS", "WITH FROZEN REACTIONS", "PERFORMANCE PARAMETERS", "MOLE FRACTIONS"]),
-        ("WITH EQUILIBRIUM REACTIONS", ["WITH FROZEN REACTIONS", "PERFORMANCE PARAMETERS", "MOLE FRACTIONS"]),
-        ("WITH FROZEN REACTIONS", ["PERFORMANCE PARAMETERS", "MOLE FRACTIONS"]),
-        ("PERFORMANCE PARAMETERS", ["MOLE FRACTIONS"]),
-        ("MOLE FRACTIONS", ["NOTE.", "PRODUCTS WHICH WERE CONSIDERED"])
-    ]
+        # This function will extract the CEA output from the full output string and return it as a dictionary
+        for of in of_ratios:
 
-    results = {}
-    for start_pat, end_pats in blocks_to_extract:
-        block = extract_block(lines, start_pat, end_pats)
-        if block:
-            results[start_pat] = block
+            fulloutput = self.fullCeaOutput(of)
 
-    return results
+            fulloutput=fulloutput.splitlines()
+            for i,line in enumerate(fulloutput):
+                if line.startswith(' P, ATM'):
+                    P_c = float(line.split()[2])*101325 # Chamber pressure in Pa (Originally in atm)
+                    P_t = float(line.split()[3])*101325 # Throat pressure in atm
+                    P_e = float(line.split()[4])*101325 # Exit pressure in atm
+                if line.startswith(' T, K'):
+                    T_c = float(line.split()[2]) # Chamber temperature in K
+                    T_t = float(line.split()[3]) # Throat temperature in K
+                    T_e = float(line.split()[4]) # Exit temperature in K
+                if line.startswith(' RHO, G/CC'):
+                    def fix_sci_notation(s):
+                        return re.sub(r'([0-9])\-([0-9])', r'\1e-\2', s)
+                    Rho_c = float(fix_sci_notation(line.split()[2]))*0.001  # Chamber density in kg/m^3 (Was in g/cc (grams/cubic centimeter) )
+                    Rho_t = float(fix_sci_notation(line.split()[3]))*0.001  # Throat density in kg/m^3 (Was in g/cc (grams/cubic centimeter) )
+                    Rho_e = float(fix_sci_notation(line.split()[4]))*0.001  # Exit density in kg/m^3 (Was in g/cc (grams/cubic centimeter) )
+                if line.startswith(' H, CAL/G'):
+                    H_c = float(line.split()[2]) * 4184.6  # Chamber enthalpy in J/Kg (Was in cal/g)
+                    H_t = float(line.split()[3]) * 4184.6  # Throat enthalpy in J/Kg (Was in cal/g)
+                    H_e = float(line.split()[4]) * 4184.6  # Exit enthalpy in J/Kg (Was in cal/g)
+                if line.startswith(' GAMMAs'):
+                    gamma = float(line.split()[2])  # Specific heat ratio
+                if line.startswith(' VISC,MILLIPOISE'):
+                    visc_c = float(line.split()[1]) * 0.001  # Viscosity in Pa.s (Was in millipoise)
+                    visc_t = float(line.split()[2]) * 0.001  # Viscosity in Pa.s (Was in millipoise)
+                    visc_e = float(line.split()[3]) * 0.001  # Viscosity in Pa.s (Was in millipoise)
+                if line.startswith('  WITH EQUILIBRIUM'):
+                    # Extract the equilibrium reactions block
+                    eq_reactions = fulloutput[i+1:i+6]   
+                    # Extract Cp Equilibrium values
+                    Cp_Equil_c = float(eq_reactions[1].split()[2]) * 4184.6  # Cp in J/Kg.K (Was in cal/g.K)
+                    Cp_Equil_t = float(eq_reactions[1].split()[3]) * 4184.6  # Cp in J/Kg.K (Was in cal/g.K)
+                    Cp_Equil_e = float(eq_reactions[1].split()[4]) * 4184.6  # Cp in J/Kg.K (Was in cal/g.K)
+
+                    # Extract Conductivity Equilibrium values
+                    cond_Equil_c = float(eq_reactions[2].split()[1])
+                    cond_Equil_t = float(eq_reactions[2].split()[2])
+                    cond_Equil_e = float(eq_reactions[2].split()[3])
+
+                    # Extract Prantdl Number Equilibrium values
+                    Pr_Equil_c = float(eq_reactions[3].split()[2])
+                    Pr_Equil_t = float(eq_reactions[3].split()[3])
+                    Pr_Equil_e = float(eq_reactions[3].split()[4])
+                if line.startswith('  WITH FROZEN'):
+                    froze_reactions = fulloutput[i+1:i+6]  # Extract the frozen reactions block
+                    # Extract Cp Equilibrium values
+                    Cp_Froze_c = float(froze_reactions[1].split()[2]) #* 4184.6  # Cp in J/Kg.K (Was in cal/g.K)
+                    Cp_Froze_t = float(froze_reactions[1].split()[3]) #* 4184.6  # Cp in J/Kg.K (Was in cal/g.K)
+                    Cp_Froze_e = float(froze_reactions[1].split()[4]) #* 4184.6  # Cp in J/Kg.K (Was in cal/g.K)
+
+                    # Extract Conductivity Equilibrium values
+                    cond_Froze_c = float(froze_reactions[2].split()[1])
+                    cond_Froze_t = float(froze_reactions[2].split()[2])
+                    cond_Froze_e = float(froze_reactions[2].split()[3])
+
+                    # Extract Prantdl Number Equilibrium values
+                    Pr_Froze_c = float(froze_reactions[3].split()[2])
+                    Pr_Froze_t = float(froze_reactions[3].split()[3])
+                    Pr_Froze_e = float(froze_reactions[3].split()[4])
+                if line.startswith(' Ae/At'):
+                    Ae_At_c = float(line.split()[1])
+                    Ae_At_e = float(line.split()[2])
+                if line.startswith(' CSTAR'):
+                    Cstar_c = float(line.split()[2]) * 0.3048 # Convert C* from ft/s to m/s
+                    Cstar_t = float(line.split()[3]) * 0.3048 # Convert C* from ft/s to m/s
+                if line.startswith(' CF'):
+                    CF_c = float(line.split()[1])  # Thrust coefficient at chamber conditions
+                    CF_t = float(line.split()[2])  # Thrust coefficient at throat conditions
+                if line.startswith(' Ivac'):
+                    Isp_vac_c = float(line.split()[1]) # Isp at vacuum conditions Lb-sec/lb
+                    Isp_vac_t = float(line.split()[2]) # Isp at throat conditions Lb-sec/lb
+                if line.startswith(' Isp'):
+                    Isp_c = float(line.split()[2]) # Isp at chamber conditions Lb-sec/lb
+                    Isp_t = float(line.split()[3]) # Isp at throat conditions Lb-sec/lb
+                if line.startswith(' MOLE FRACTIONS'):
+                    # Extract the mole fractions block
+                    molar_fractions = [] # Store the mole fractions
+                    while not line.startswith('  * THERMODYNAMIC'):
+                        line = fulloutput[i+1] 
+                        if line.split() == []: # Ignore empty lines
+                            pass
+                        elif line.startswith('  * THERMODYNAMIC'): # Ignore last line
+                            break
+                        else: # Add all other lines as these are molar fractions
+                            molar_fractions.append(line.split())
+                        i += 1
+
+            # Store the extracted data in the of_data dictionary
+            of_data[of] = {
+                'OF_ratio': of,
+                'P_c': P_c,
+                'P_t': P_t,
+                'P_e': P_e,
+                'T_c': T_c,
+                'T_t': T_t,
+                'T_e': T_e,
+                'Rho_c': Rho_c,
+                'Rho_t': Rho_t,
+                'Rho_e': Rho_e,
+                'H_c': H_c,
+                'H_t': H_t,
+                'H_e': H_e,
+                'gamma': gamma,
+                'visc_c': visc_c,
+                'visc_t': visc_t,
+                'visc_e': visc_e,
+                'Cp_Equil_c': Cp_Equil_c,
+                'Cp_Equil_t': Cp_Equil_t,
+                'Cp_Equil_e': Cp_Equil_e,
+                'cond_Equil_c': cond_Equil_c,
+                'cond_Equil_t': cond_Equil_t,
+                'cond_Equil_e': cond_Equil_e,
+                'Pr_Equil_c': Pr_Equil_c,
+                'Pr_Equil_t': Pr_Equil_t,
+                'Pr_Equil_e': Pr_Equil_e,
+                'Cp_Froze_c': Cp_Froze_c,
+                'Cp_Froze_t': Cp_Froze_t,
+                'Cp_Froze_e': Cp_Froze_e,
+                'cond_Froze_c': cond_Froze_c,
+                'cond_Froze_t': cond_Froze_t,
+                'cond_Froze_e': cond_Froze_e,
+                'Pr_Froze_c': Pr_Froze_c,
+                'Pr_Froze_t': Pr_Froze_t,
+                'Pr_Froze_e': Pr_Froze_e, 
+                'Ae_At_c': Ae_At_c, 
+                'Ae_At_e': Ae_At_e, 
+                'Cstar_c' : Cstar_c, 
+                'Cstar_t' : Cstar_t, 
+                'CF_c' : CF_c, 
+                'CF_t' : CF_t, 
+                'Isp_vac_c' : Isp_vac_c, 
+                'Isp_vac_t' : Isp_vac_t, 
+                'Isp_c' : Isp_c,
+                'Isp_t' : Isp_t,
+                'molar_fractions': molar_fractions}
+        
+
+        return of_data
 
 def RS25_Design():
     # FUNCTION WORKSPACE
@@ -269,50 +324,36 @@ def RS25_Design():
     Pc = 200 # Chamber pressure in bar (200 bar for RS25)
     fuel_stroage_density = 70.85  # Density of LH2 in kg/m^3
     ox_storage_density = 1140.0  # Density of LOX in kg/m^3
-    burn_time = 500  # Estimated burn time in seconds
-    engine_thrust_lb = 450000  # Estimated thrust sea level  [lbf]
+    burn_time = 520  # Estimated burn time in seconds
+    engine_thrust_lb = 491E3  # Estimated thrust sea level  [lbf]
     engine_thrust_n = engine_thrust_lb * 4.44822  # Convert lbf to N
     number_of_engines = 3  # Number of RS25 engines
-
     # Function to run rocket engine calculations/design
     RS25 = RocketEngine('LOX', 'LH2', Pc, expansion_ratio, burn_time, engine_thrust_n, num_engines=number_of_engines) # Verification Engine: RS25 - Cryo-rocket.com
     engine_name = 'RS25'  # Name of the engine for display purposes
 
-    of_ratios = np.arange(0.5, 21, 0.1)  # Define O/F ratios for the RS25 engine
+    of_ratios = np.arange(0.8, 21, 0.1)  # Define O/F ratios for the RS25 engine
 
-    of_ratios =[6]
+    # of_ratios =[6]
     # Display the performance curves for the RS25 engine
     #RS25.display_MR_curves(of_ratios, fuel_stroage_density, ox_storage_density, engine_name=engine_name)
-    for of in of_ratios:
 
-        fulloutput = RS25.fullCeaOutput(of)
+    # Loop through each O/F ratio and extract the CEA output
+    of_data = RS25.extract_cea_output(of_ratios)
 
-        fulloutput=fulloutput.splitlines()
-        for i,line in enumerate(fulloutput):
-            print(i, line)
-            if line.startswith(' P, ATM'):
-                Pc = float(line.split()[2])*101325 # Chamber pressure in Pa (Originally in atm)
-                Pt = float(line.split()[3])*101325 # Throat pressure in atm
-                Pe = float(line.split()[4])*101325 # Exit pressure in atm
-            if line.startswith(' T, K'):
-                Tc = float(line.split()[2]) # Chamber temperature in K
-                Tt = float(line.split()[3]) # Throat temperature in K
-                Te = float(line.split()[4]) # Exit temperature in K
-            if line.startswith(' RHO, G/CC'):
-                def fix_sci_notation(s):
-                    return re.sub(r'([0-9])\-([0-9])', r'\1e-\2', s)
-                Rho_c = float(fix_sci_notation(line.split()[2]))*0.001  # Chamber density in kg/m^3 (Was in g/cc (grams/cubic centimeter) )
-                Rho_t = float(fix_sci_notation(line.split()[3]))*0.001  # Throat density in kg/m^3 (Was in g/cc (grams/cubic centimeter) )
-                Rho_e = float(fix_sci_notation(line.split()[4]))*0.001  # Exit density in kg/m^3 (Was in g/cc (grams/cubic centimeter) )
-            if line.startswith(' H, CAL/G'):
-                Hc = float(line.split()[2]) * 4184.6  # Chamber enthalpy in J/Kg (Was in cal/g)
-                Ht = float(line.split()[3]) * 4184.6  # Throat enthalpy in J/Kg (Was in cal/g)
-                He = float(line.split()[4]) * 4184.6  # Exit enthalpy in J/Kg (Was in cal/g)
-            if line.startswith(' GAMMAs'):
-                gamma = float(line.split()[2])  # Specific heat ratio
-            if line.startswith(' VISC, MILLIPOISE'):
-                print(line.split())
+    RS25.display_MR_curves(of_ratios, engine_name=engine_name)  # Display the performance curves for the RS25 engine
 
+    # Plot temperature
+    plt.figure()
+    plt.plot(of_ratios, [data['T_c'] for data in of_data.values()], label='Chamber Temperature (K)')
+    plt.xlabel('O/F Ratio')
+    plt.ylabel('Temperature (K)')
+    plt.title(f'{engine_name} Temperature vs O/F Ratio')
+    plt.ylim(0, 4000)  # Limit y-axis to 4000 K
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    # plt.show()
     pass
 
 def The5k():
@@ -351,7 +392,7 @@ def  main():
 
     RS25_Design()
 
-    The5k()
+    # The5k()
 
 
     
