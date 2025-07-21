@@ -39,7 +39,7 @@ class RocketEngine:
         total_impulse = self.thrust * self.burn_time  # in N*s
         return total_impulse
 
-    def display_MR_curves(self, of_ratios, fuel_storage_density, ox_storage_density, engine_name=None):
+    def display_MR_curves(self, of_ratios, fuel_storage_density, ox_storage_density, engine_name=None, target_of=2):
         # Display plots of chamber temperature, mole fractions, specific heat ratios, C*, and Isp for given range of O/F ratios
 
         of_data = self.extract_cea_output(of_ratios)  # Extract CEA output for the given O/F ratios
@@ -88,15 +88,15 @@ class RocketEngine:
 
         # Plot Isp for fixed expansion and infinite expansion ratio (cryo-rocket.com figure 3.4.6)
         plt.figure(figsize=(8, 5))
-        plt.plot(of_ratios, [data['Isp_t'] for data in of_data.values()], label='Isp')
-        plt.plot(of_ratios, [data['Isp_vac_t'] for data in of_data.values()], label='Isp vac (Exit)')
+        plt.plot(of_ratios, [data['Isp_e'] for data in of_data.values()], label='Isp')
+        plt.plot(of_ratios, [data['Isp_vac_e'] for data in of_data.values()], label='Isp vac (Exit)')
         # Example: Get the index of a specific O/F ratio in of_data
-        target_of = 6  # Replace with the O/F ratio you want to find
+        # target_of = 2  # Replace with the O/F ratio you want to find
         of_keys = [round(float(of), 1) for of in of_data.keys()]
         if target_of in of_keys:
             idx = of_keys.index(target_of)
         # Annotate the plot at the target O/F ratio
-        isp_value = [data['Isp_vac_t'] for data in of_data.values()][idx]
+        isp_value = [data['Isp_e'] for data in of_data.values()][idx]
         plt.annotate(f'O/F={target_of:.1f}\nIsp={isp_value:.1f}',
                      xy=(target_of, isp_value),
                      xytext=(target_of + 0.2, isp_value + 10),
@@ -113,9 +113,14 @@ class RocketEngine:
         
 
         I = self.burn_time * self.thrust * self.num_engines  # Total impulse in N*s
-
+        ox_volumes = []
+        fuel_volumes = []
+        tot_masses = []
+        tot_volumes = []
+        of_array = []
+    
         for data in of_data.values():
-            tot_mass = I / (data['Isp_vac_t'] * 9.81)
+            tot_mass = I / (data['Isp_e'] * g)  
             fuel_mass = tot_mass / (1 + data['OF_ratio'])
             ox_mass = (data['OF_ratio']*tot_mass) / (data['OF_ratio'] + 1)
             data['tot_mass'] = tot_mass
@@ -124,6 +129,12 @@ class RocketEngine:
             data['ox_volume'] = ox_mass / ox_storage_density
             data['fuel_volume'] = fuel_mass / fuel_storage_density
             data['propellant_volume'] = data['ox_volume'] + data['fuel_volume']
+            of_array.append(data['OF_ratio'])
+            fuel_volumes.append(data['fuel_volume'])
+            ox_volumes.append(data['ox_volume'])
+            tot_volumes.append(data['ox_volume'] + data['fuel_volume'])
+            tot_masses.append(tot_mass)
+
 
                   
         # Plot propellant masses 
@@ -131,6 +142,21 @@ class RocketEngine:
         plt.plot(of_ratios, [data['ox_mass'] for data in of_data.values()], label='Oxidizer Mass (kg)')
         plt.plot(of_ratios, [data['fuel_mass'] for data in of_data.values()], label='Fuel Mass (kg)')
         plt.plot(of_ratios, [data['tot_mass'] for data in of_data.values()], label='Total Propellant Mass (kg)')
+        # Annotate the plot at the target O/F ratio
+        mass_value = [data['tot_mass'] for data in of_data.values()][idx]
+        plt.annotate(f'O/F={target_of:.1f}\nTot Mass={mass_value:.1f}',
+                     xy=(target_of, mass_value),
+                     xytext=(target_of + 0.2, mass_value + 10),
+                     arrowprops=dict(facecolor='black', shrink=0.05),
+                     fontsize=9,
+                     bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.5))
+        of_min_target = of_array[tot_masses.index(min(tot_masses))]  # Get the O/F ratio corresponding to the minimum total mass
+        plt.annotate(f'O/F={of_min_target:.1f}\nTot Mass={min(tot_masses):.1f}',
+                     xy=(of_min_target, min(tot_masses)),
+                     xytext=(of_min_target + 0.2, min(tot_masses) + 10),
+                     arrowprops=dict(facecolor='black', shrink=0.05),
+                     fontsize=9,
+                     bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.5))
         plt.xlabel('O/F Ratio')
         plt.ylabel('Mass (kg)')
         plt.xlim(0, 8)
@@ -144,7 +170,7 @@ class RocketEngine:
         plt.figure(figsize=(8, 5))
         plt.plot(of_ratios, [data['propellant_volume'] for data in of_data.values()], label='Propellant Volume (m^3)')
         plt.plot(of_ratios, [data['ox_volume'] for data in of_data.values()], label='Oxidizer Volume (m^3)')
-        plt.plot(of_ratios, [data['fuel_volume'] for data in of_data.values()], label='Fuel Volume (m^3)')
+        plt.plot(of_ratios, [data['fuel_volume'] for data in of_data.values()], label='Fuel Volume (m^3)')    
         plt.xlabel('O/F Ratio')
         plt.ylabel('Volume (m^3)')
         plt.xlim(0, 8)
@@ -152,44 +178,135 @@ class RocketEngine:
         plt.legend()
         plt.grid(True)
     
-        plt.show()
 
+        self.print_OF_info(of_data, target_of)  # Display CEA output data for O/F ratio of 2
+        
+        plt.show()
 
         pass
 
-    def extract_OF_info(self, of_ratio):
+    def print_OF_info(self, of_data, target_of):
+        # Inputs:
+        # of_ratios: List of O/F ratios to display data for
+        # target_of: O/F ratio to display data for (used for annotation)
+
         # Function which displays CEA data for given O/F ratio
-        of_data = self.extract_cea_output([of_ratio])  # Extract CEA output for the given O/F ratio
+        temp_array = [] # Create an array to store the chamber temperatures for each of the O/F ratios
+        ISP_array = [] # Create an array to store the Isp for each of the O/F ratios
+        ISP_vac_array = [] # Create an array to store the Isp at vacuum for each of the O/F ratios
+        fuel_mass_array = [] # Create an array to store the fuel mass for each of the O/F ratios
+        ox_mass_array = [] # Create an array to store the oxidizer mass for each of the O/F ratios
+        tot_mass_array = [] # Create an array to store the total mass for each of the O/F ratios
+        of_array = [] # Create an array to store the O/F ratios for each of the O/F ratios
+        fuel_volume_array = [] # Create an array to store the fuel volume for each of the O/F ratios
+        ox_volume_array = [] # Create an array to store the oxidizer volume for each of the O/F ratios
+        tot_volume_array = [] # Create an array to store the total volume for each of the O/F ratios
+        gamma_array = [] # Create an array to store the specific heat ratio for each of the O/F ratios
         for data in of_data.values():
-            print(f"O/F Ratio: {data['OF_ratio']} \n"
-                  f"Chamber Pressure: {data['P_c']} Pa \n"
-                  f"Throat Pressure: {data['P_t']} Pa \n"
-                  f"Exit Pressure: {data['P_e']} Pa \n"
-                  f"Chamber Temperature: {data['T_c']} K \n"
-                  f"Throat Temperature: {data['T_t']} K \n"
-                  f"Exit Temperature: {data['T_e']} K \n"
-                  f"Chamber Density: {data['Rho_c']} kg/m^3 \n"
-                  f"Throat Density: {data['Rho_t']} kg/m^3 \n"
-                  f"Exit Density: {data['Rho_e']} kg/m^3 \n"
-                  f"Chamber Enthalpy: {data['H_c']} J/kg \n"
-                  f"Throat Enthalpy: {data['H_t']} J/kg \n"
-                  f"Exit Enthalpy: {data['H_e']} J/kg \n"
-                  f"Specific Heat Ratio (γ): {data['gamma']} \n"
-                  f"Viscosity at Chamber Conditions: {data['visc_c']} Pa.s \n"
-                  f"Viscosity at Throat Conditions: {data['visc_t']} Pa.s \n"
-                  f"Viscosity at Exit Conditions: {data['visc_e']} Pa.s \n"
-                  f"Cp Equilibrium at Chamber Conditions: {data['Cp_Equil_c']} J/kg.K \n"
-                  f"Cp Equilibrium at Throat Conditions: {data['Cp_Equil_t']} J/kg.K \n"
-                  f"Cp Equilibrium at Exit Conditions: {data['Cp_Equil_e']} J/kg.K \n"
-                  f"Conductivity Equilibrium at Chamber Conditions: {data['cond_Equil_c']} W/m.K \n"
-                  f"Conductivity Equilibrium at Throat Conditions: {data['cond_Equil_t']} W/m.K \n"
-                  f"Conductivity Equilibrium at Exit Conditions: {data['cond_Equil_e']} W/m.K \n"
-                  f"Prandtl Number Equilibrium at Chamber Conditions: {data['Pr_Equil_c']} \n"
-                  f"Prandtl Number Equilibrium at Throat Conditions: {data['Pr_Equil_t']} \n"
-                  f"Prandtl Number Equilibrium at Exit Conditions: {data['Pr_Equil_e']} \n")
-            
-        return None
+            temp_array.append(data['T_c'])
+            ISP_array.append(data['Isp_e'])
+            ISP_vac_array.append(data['Isp_vac_e'])
+            fuel_mass_array.append(data['fuel_mass'])
+            ox_mass_array.append(data['ox_mass'])
+            tot_mass_array.append(data['tot_mass'])
+            of_array.append(round(float(data['OF_ratio']), 1))
+            fuel_volume_array.append(data['fuel_volume'])
+            ox_volume_array.append(data['ox_volume'])
+            tot_volume_array.append(data['propellant_volume'])
+            gamma_array.append(data['gamma_t'])  # Specific heat ratio at throat conditions
         
+        # Print the CEA data for the target O/F ratio    
+        # Prepare table data
+        def get_of_for_extreme(arr, of_arr, func):
+            idx = arr.index(func(arr))
+            return of_arr[idx]
+
+        table_data = [
+            ["Parameter", "Value", "Min/Max", "Delta"],
+            [
+            "Chamber Temperature (K)",
+            f"{temp_array[of_array.index(target_of)]:.2f}",
+            f"Max: {max(temp_array):.2f} @ O/F={get_of_for_extreme(temp_array, of_array, max):.2f}",
+            f"{max(temp_array) - temp_array[of_array.index(target_of)]:.2f}"
+            ],
+            [
+            "Isp (sec)",
+            f"{ISP_array[of_array.index(target_of)]:.2f}",
+            f"Max: {max(ISP_array):.2f} @ O/F={get_of_for_extreme(ISP_array, of_array, max):.2f}",
+            f"{max(ISP_array) - ISP_array[of_array.index(target_of)]:.2f}"
+            ],
+            [
+            "Isp at vacuum (sec)",
+            f"{ISP_vac_array[of_array.index(target_of)]:.2f}",
+            f"Max: {max(ISP_vac_array):.2f} @ O/F={get_of_for_extreme(ISP_vac_array, of_array, max):.2f}",
+            f"{max(ISP_vac_array) - ISP_vac_array[of_array.index(target_of)]:.2f}"
+            ],
+            [
+            "Fuel Mass (kg)",
+            f"{fuel_mass_array[of_array.index(target_of)]:.2f}",
+            f"Min: {min(fuel_mass_array):.2f} @ O/F={get_of_for_extreme(fuel_mass_array, of_array, min):.2f}",
+            f"{abs(min(fuel_mass_array) - fuel_mass_array[of_array.index(target_of)]):.2f}"
+            ],
+            [
+            "Oxidizer Mass (kg)",
+            f"{ox_mass_array[of_array.index(target_of)]:.2f}",
+            f"Min: {min(ox_mass_array):.2f} @ O/F={get_of_for_extreme(ox_mass_array, of_array, min):.2f}",
+            f"{abs(min(ox_mass_array) - ox_mass_array[of_array.index(target_of)]):.2f}"
+            ],
+            [
+            "Total Mass (kg)",
+            f"{tot_mass_array[of_array.index(target_of)]:.2f}",
+            f"Min: {min(tot_mass_array):.2f} @ O/F={get_of_for_extreme(tot_mass_array, of_array, min):.2f}",
+            f"{abs(min(tot_mass_array) - tot_mass_array[of_array.index(target_of)]):.2f}"
+            ],
+            [
+            "Fuel Volume (m^3)",
+            f"{fuel_volume_array[of_array.index(target_of)]:.2f}",
+            f"Min: {min(fuel_volume_array):.2f} @ O/F={get_of_for_extreme(fuel_volume_array, of_array, min):.2f}",
+            f"{abs(min(fuel_volume_array) - fuel_volume_array[of_array.index(target_of)]):.2f}"
+            ],
+            [
+            "Oxidizer Volume (m^3)",
+            f"{ox_volume_array[of_array.index(target_of)]:.2f}",
+            f"Min: {min(ox_volume_array):.2f} @ O/F={get_of_for_extreme(ox_volume_array, of_array, min):.2f}",
+            f"{abs(min(ox_volume_array) - ox_volume_array[of_array.index(target_of)]):.2f}"
+            ],
+            [
+            "Total Volume (m^3)",
+            f"{tot_volume_array[of_array.index(target_of)]:.2f}",
+            f"Min: {min(tot_volume_array):.2f} @ O/F={get_of_for_extreme(tot_volume_array, of_array, min):.2f}",
+            f"{abs(min(tot_volume_array) - tot_volume_array[of_array.index(target_of)]):.2f}"
+            ],
+        ]
+        # Calculate column widths for alignment
+        col_widths = [max(len(str(row[i])) for row in table_data) for i in range(4)]
+        sep = " | "
+        total_width = sum(col_widths) + len(sep) * 3
+
+        print("=" * total_width)
+        print(f"Cea Data for O/F ratio of {target_of}:")
+        print(f"Specific Heat Ratio at Throat Conditions: {gamma_array[of_array.index(target_of)]:.4f}")
+        print("=" * total_width)
+        # Print table header
+        print(
+            f"{table_data[0][0]:<{col_widths[0]}}{sep}"
+            f"{table_data[0][1]:<{col_widths[1]}}{sep}"
+            f"{table_data[0][2]:<{col_widths[2]}}{sep}"
+            f"{table_data[0][3]:<{col_widths[3]}}"
+        )
+        print("-" * total_width)
+        # Print table rows
+        for row in table_data[1:]:
+            print(
+            f"{row[0]:<{col_widths[0]}}{sep}"
+            f"{row[1]:<{col_widths[1]}}{sep}"
+            f"{row[2]:<{col_widths[2]}}{sep}"
+            f"{row[3]:<{col_widths[3]}}"
+            )
+        print("=" * total_width)
+        print()
+
+        return None
     def extract_cea_output(self, of_ratios):
         # FUNCTION WORKSPACE
         
@@ -203,7 +320,6 @@ class RocketEngine:
 
             fulloutput=fulloutput.splitlines()
             for i,line in enumerate(fulloutput):
-                print(line)
                 if line.startswith(' P, BAR'):
                     P_c = float(line.split()[2]) # Chamber pressure in Pa (Originally in bar)
                     P_t = float(line.split()[3]) # Throat pressure in bar
@@ -213,12 +329,12 @@ class RocketEngine:
                     T_t = float(line.split()[3]) # Throat temperature in K
                     # T_e = float(line.split()[4]) # Exit temperature in K
                 if line.startswith(' RHO, KG/CU M'):
-                    # def fix_sci_notation(s):
-                        # return re.sub(r'([0-9])\-([0-9])', r'\1e-\2', s)
-                    # Rho_c = float(fix_sci_notation(line.split()[2]))*0.001  # Chamber density in kg/m^3 (Was in g/cc (grams/cubic centimeter) )
-                    # Rho_t = float(fix_sci_notation(line.split()[3]))*0.001  # Throat density in kg/m^3 (Was in g/cc (grams/cubic centimeter) )
-                    Rho_c = float(line.split()[3]) * (10**float(line.split()[4]))
-                    Rho_t = float(line.split()[5]) * (10**float(line.split()[6]))  # Throat density in kg/m^3 (Was in g/cc (grams/cubic centimeter) )
+                    def fix_sci_notation(s):
+                        return re.sub(r'([0-9])\-([0-9])', r'\1e-\2', s)
+                    Rho_c = float(fix_sci_notation(line.split()[3]))  # Chamber density in kg/m^3 (Was in g/cc (grams/cubic centimeter) )
+                    Rho_t = float(fix_sci_notation(line.split()[5]))  # Throat density in kg/m^3 (Was in g/cc (grams/cubic centimeter) )
+                    # Rho_c = float(line.split()[3]) * (10**float(line.split()[4]))
+                    # Rho_t = float(line.split()[5]) * (10**float(line.split()[6]))  # Throat density in kg/m^3 (Was in g/cc (grams/cubic centimeter) )
                 if line.startswith(' H, KJ/KG'):
                     H_c = float(line.split()[2])*1000            # Chamber enthalpy in J/Kg 
                     H_t = float(line.split()[3])*1000           # Throat enthalpy in J/Kg 
@@ -277,12 +393,12 @@ class RocketEngine:
                     CF_t = float(line.split()[1])  # Thrust coefficient at throat conditions
                 if line.startswith(' Ivac'):
                     # Isp_vac_c = float(line.split()[1]) # Isp at vacuum conditions Lb-sec/lb
-                    Isp_vac_t = float(line.split()[2])/10
-                    # Isp_vac_e = float(line.split()[2]) # Isp at throat conditions Lb-sec/lb
+                    Isp_vac_t = float(line.split()[2])/g
+                    Isp_vac_e = float(line.split()[3])/g # Isp at throat conditions Lb-sec/lb
                 if line.startswith(' Isp'):
                     # Isp_c = float(line.split()[2]) # Isp at chamber conditions Lb-sec/lb
-                    Isp_t = float(line.split()[2])/10 # Isp at throat conditions Lb-sec/lb
-                    # Isp_e = float(line.split()[3]) # Isp at exit conditions Lb-sec/lb
+                    Isp_t = float(line.split()[2])/g # Isp at throat conditions M//SEC
+                    Isp_e = float(line.split()[3])/g # Isp at exit conditions Lb-sec/lb
                 if line.startswith(' MASS FRACTIONS'):
                     # Extract the mole fractions block
                     molar_fractions = [] # Store the mole fractions
@@ -297,6 +413,8 @@ class RocketEngine:
                         i += 1
 
             # Store the extracted data in the of_data dictionary
+
+            
             of_data[of] = {
                 'OF_ratio': of,
                 'P_c': P_c,
@@ -340,9 +458,9 @@ class RocketEngine:
                 'Cstar_t' : Cstar_t, 
                 # 'CF_c' : CF_c, 
                 'CF_t' : CF_t, 
-                # 'Isp_vac_e' : Isp_vac_e, 
+                'Isp_vac_e' : Isp_vac_e, 
                 'Isp_vac_t' : Isp_vac_t, 
-                # 'Isp_e' : Isp_e,
+                'Isp_e' : Isp_e,
                 'Isp_t' : Isp_t,
                 'molar_fractions': molar_fractions}
         
@@ -354,7 +472,7 @@ def RS25_Design():
     # This function will be used to run through the steps to design the RS25 rocket engine
 
     expansion_ratio = 69  # Fixed expansion ratio for RS
-    Pc = 202 # Chamber pressure in bar (200 bar for RS25)
+    Pc = 200 # Chamber pressure in bar (200 bar for RS25)
     fuel_stroage_density = 70.85  # Density of LH2 in kg/m^3
     ox_storage_density = 1140.0  # Density of LOX in kg/m^3
     burn_time = 520  # Estimated burn time in seconds
@@ -394,7 +512,8 @@ def The5k():
     fuel_stroage_density = 737.9  # Density of RP-1 in kg/m^3 (approximate)
     ox_storage_density = 1140.0  # Density of LOX in kg/m^3 (approximate)
     burn_time = 40  # Estimated burn time in seconds
-    
+    expansion_ratio = 69  # No fixed expansion ratio for the 5k engine yet... 
+
     
     
     # Calculate thrust to weight ratio
@@ -402,12 +521,10 @@ def The5k():
 
     # o/f Ratio array to find the optimal O/F ratio
     of_ratios = np.arange(0.5, 7, 0.1)  # Define O/F ratios for the 5k engine
-    expansion_ratio = None  # No fixed expansion ratio for the 5k engine yet... 
 
     # Function to run rocket engine calculations/design
     The5k = RocketEngine('LOX', 'RP-1', Pc, expansion_ratio, burn_time, desired_engine_thrust, num_engines=1) # Verification Engine: RS25 - Cryo-rocket.com
-    The5k.display_MR_curves(of_ratios, fuel_stroage_density, ox_storage_density, engine_name=engine_name) # Display the performance curves for the 5k engine to determine optimal O/F
-
+    The5k.display_MR_curves(of_ratios, fuel_stroage_density, ox_storage_density, engine_name=engine_name, target_of=2) # Display the performance curves for the 5k engine to determine optimal O/F
 
     pass
 
@@ -415,9 +532,9 @@ def  main():
     # Call functions and run code here
 
 
-    RS25_Design()
+    # RS25_Design()
 
-    # The5k()
+    The5k()
 
 
 
