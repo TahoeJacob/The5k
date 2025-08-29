@@ -10,12 +10,13 @@ import re
 
 # Global Constants
 g = 9.81 # Gravity in m/s/s^2 (sea level)
+c = 295 # Speed of sound in air at sea level in m/s (approximate, varies with temperature and pressure)
 Ru = 8.31446261815324 # Univeral gas constant [J/mol*K]
 specificGasConstant = Ru/0.013551 # Specifc gas constant [J/Kmol] (named wrong but cant be arsed to change it)
 
 
 class RocketEngine:
-    def __init__(self, oxidizer, fuel, chamber_pressure, expansion_ratio, burn_time, thrust, num_engines=1):
+    def __init__(self, oxidizer, fuel, chamber_pressure, expansion_ratio, burn_time, thrust, num_engines=1, Cd = 0.21):
         self.oxidizer = oxidizer
         self.fuel = fuel
         self.chamber_pressure_bar = chamber_pressure
@@ -23,6 +24,7 @@ class RocketEngine:
         self.burn_time = burn_time
         self.thrust = thrust
         self.num_engines = num_engines
+        self.Cd = Cd  # Drag coefficient of the rocket body
 
     def fullCeaOutput(self, of_ratio):
         # Return the full CEA output
@@ -179,17 +181,21 @@ class RocketEngine:
         plt.grid(True)
     
 
-        self.print_OF_info(of_data, target_of)  # Display CEA output data for O/F ratio of 2
+        of_data = self.print_OF_info(of_data, target_of)  # Display CEA output data for O/F ratio of 2
         
         plt.show()
 
-        pass
+        return of_data
 
     def print_OF_info(self, of_data, target_of):
         # Inputs:
         # of_ratios: List of O/F ratios to display data for
         # target_of: O/F ratio to display data for (used for annotation)
 
+         # Calculate length of pipe based off volumes and diameters
+        d = 0.152 # Daiameter of pipe [m] (from steel and tube)
+        A = np.pi * (d/2)**2  # Cross-sectional area of the pipe [m^2]
+        
         # Function which displays CEA data for given O/F ratio
         temp_array = [] # Create an array to store the chamber temperatures for each of the O/F ratios
         ISP_array = [] # Create an array to store the Isp for each of the O/F ratios
@@ -202,6 +208,10 @@ class RocketEngine:
         ox_volume_array = [] # Create an array to store the oxidizer volume for each of the O/F ratios
         tot_volume_array = [] # Create an array to store the total volume for each of the O/F ratios
         gamma_array = [] # Create an array to store the specific heat ratio for each of the O/F ratios
+        c_star_array = [] # Create an array to store the characteristic velocity for each of the O/F ratios
+        chamber_pressure_array = [] # Create an array to store the chamber pressure for each of the O/F ratios
+        Cp_array = [] # Create an array to store the specific heat at constant pressure for each of the O/F ratios
+
         for data in of_data.values():
             temp_array.append(data['T_c'])
             ISP_array.append(data['Isp_e'])
@@ -214,7 +224,19 @@ class RocketEngine:
             ox_volume_array.append(data['ox_volume'])
             tot_volume_array.append(data['propellant_volume'])
             gamma_array.append(data['gamma_t'])  # Specific heat ratio at throat conditions
+            data['tank_length'] = round(data['propellant_volume'] / A, 2)  # Length of tank [m]
+            data['ox_tank_length'] = round(data['ox_volume'] / A, 2)  # Length of oxidizer tank [m]
+            data['fuel_tank_length'] = round(data['fuel_volume'] / A, 2)  # Length of fuel tank [m]
+            c_star_array.append(data['Cstar_t'])  # Characteristic velocity at throat conditions
+            chamber_pressure_array.append(data['P_c']) # Chamber pressure in Pa
+            Cp_array.append(data['Cp_Equil_t'])
+
         
+
+        length = [round(volume / A, 2) for volume in tot_volume_array]
+        ox_tank_length = round(ox_volume_array[of_array.index(target_of)] / A, 2)  # Length of oxidizer tank [m]
+        fuel_tank_length = round(fuel_volume_array[of_array.index(target_of)] / A, 2)
+
         # Print the CEA data for the target O/F ratio    
         # Prepare table data
         def get_of_for_extreme(arr, of_arr, func):
@@ -277,7 +299,34 @@ class RocketEngine:
             f"Min: {min(tot_volume_array):.2f} @ O/F={get_of_for_extreme(tot_volume_array, of_array, min):.2f}",
             f"{abs(min(tot_volume_array) - tot_volume_array[of_array.index(target_of)]):.2f}"
             ],
+            ["Chamber Pressure (Bar)",
+            f"{chamber_pressure_array[of_array.index(target_of)]:.2f}",
+            f"Max: {max(chamber_pressure_array):.2f} @ O/F={get_of_for_extreme(chamber_pressure_array, of_array, max):.2f}",
+            f"{max(chamber_pressure_array) - chamber_pressure_array[of_array.index(target_of)]:.2f}"
+            ],
+            ["Specific Heat Ratio (γ)", 
+            f"{gamma_array[of_array.index(target_of)]:.4f}",
+            f"Max: {max(gamma_array):.4f} @ O/F={get_of_for_extreme(gamma_array, of_array, max):.2f}",
+            f"{max(gamma_array) - gamma_array[of_array.index(target_of)]:.4f}"
+            ],
+            ["Characteristic Velocity (C*)",    
+            f"{c_star_array[of_array.index(target_of)]:.2f} m/s",
+            f"Max: {max(c_star_array):.2f} m/s @ O/F={get_of_for_extreme(c_star_array, of_array, max):.2f}",
+            f"{max(c_star_array) - c_star_array[of_array.index(target_of)]:.2f} m/s"
+            ],
+            ["Specific Heat at Constant Pressure (Cp)",
+            f"{Cp_array[of_array.index(target_of)]:.2f} J/Kg.K",
+            f"Max: {max(Cp_array):.2f} J/Kg.K @ O/F={get_of_for_extreme(Cp_array, of_array, max):.2f}",
+            f"{max(Cp_array) - Cp_array[of_array.index(target_of)]:.2f} J/Kg.K"
+            ],
         ]
+
+       
+        print(f"Pipe Length for O/F ratio of {target_of}: {length[of_array.index(target_of)]} m, Oxidizer Tank Length: {ox_tank_length} m, Fuel Tank Length: {fuel_tank_length} m") 
+        # Based off length calculate mass of pipe
+        mass_per_meter = 6  # Mass of steel per meter [kg/m] (from steel and tube)
+        print(f"Pipe Mass for O/F ratio of {target_of}: {round(length[of_array.index(target_of)] * mass_per_meter, 2)} kg")
+
         # Calculate column widths for alignment
         col_widths = [max(len(str(row[i])) for row in table_data) for i in range(4)]
         sep = " | "
@@ -306,7 +355,8 @@ class RocketEngine:
         print("=" * total_width)
         print()
 
-        return None
+        return of_data
+    
     def extract_cea_output(self, of_ratios):
         # FUNCTION WORKSPACE
         
@@ -335,6 +385,7 @@ class RocketEngine:
                     Rho_t = float(fix_sci_notation(line.split()[5]))  # Throat density in kg/m^3 (Was in g/cc (grams/cubic centimeter) )
                     # Rho_c = float(line.split()[3]) * (10**float(line.split()[4]))
                     # Rho_t = float(line.split()[5]) * (10**float(line.split()[6]))  # Throat density in kg/m^3 (Was in g/cc (grams/cubic centimeter) )
+           
                 if line.startswith(' H, KJ/KG'):
                     H_c = float(line.split()[2])*1000            # Chamber enthalpy in J/Kg 
                     H_t = float(line.split()[3])*1000           # Throat enthalpy in J/Kg 
@@ -467,6 +518,160 @@ class RocketEngine:
 
         return of_data
 
+    def calc_gravity(self, h):
+        R_earth = 6.371e6  # meters
+        g0 = 9.81  # m/s^2
+        return g0 * (R_earth / (R_earth + h)) ** 2
+
+    def calc_air_density(self, h): # from https://www.grc.nasa.gov/www/k-12/airplane/atmosmet.html
+        if h  < 11000:  # Below 11 km, use the barometric formula
+            T = 15.05 - 0.00649*h # Temperature in Celsius
+            p = 101.29 * ((T+273.15)/288.08)**(5.256)
+        elif h < 25000 and h >= 11000: # Above 11km less than 25km
+            T = -56.46  # Temperature in Celsius
+            p = 22.65 * np.exp(1.73 - 0.000157*h)
+        else:  # Above 25 km, use a constant pressure
+            T = -131.21 + 0.00299*h  # Temperature in Celsius
+            p = 2.488 * ((T + 273.15)/216.6)**(-11.388)
+                               
+        rho = p/(0.2869*(T+273.15))  # Density in kg/m^3
+        return rho
+
+
+    def estimate_altitude(self, of_ratios, target_of, dt = 0.1, recovery_mass = 5, engine_mass = 10, payload_mass = 2, tank_mass_per_meter = 6):
+        # Function to calculate altitute rocket will get reach
+        # Inputs:
+        # of_ratios: List of O/F ratios to display data for
+        # target_of: O/F ratio to display data for (used for annotation)
+        # dt: Time step for the simulation in seconds
+        # recovery_mass: Mass of the recovery system in kg
+        # engine_mass: Mass of the rocket engine in kg
+        # payload_mass: Mass of the payload in kg
+        # tank_mass_per_meter: Mass of the tank per meter in kg/m
+
+        # Returns:
+        # altitude: Estimated altitude the rocket will reach in meters
+
+        # First thing is to setup arrays for acceleration, velocity, and altitude
+        acceleration = [] # Acceleration in m/s
+        velocities = []  # Velocity in m/s
+        machs = []  # Mach number
+        altitudes = []  # Altitude in m
+
+        v = 0 # Initial velocity in m/s
+        h = 0 # Initial altitude in m
+
+
+        # Caluclate initial mass of rocket
+        of_array = []  # Array to store O/F ratios
+        tot_masses = []  # Array to store total masses
+        fuel_masses = []  # Array to store fuel masses
+        ox_masses = []  # Array to store oxidizer masses
+        tank_lengths = []  # Array to store tank lengths
+        fuel_mdot_array = [] # Array to store fuel mass flow rates
+        ox_mdot_array = []  # Array to store oxidizer mass flow rates
+        for data in of_ratios.values(): # Extract CEA output for each O/F ratio
+            of_array.append(round(float(data['OF_ratio']), 1))
+            tot_masses.append(data['tot_mass'])
+            fuel_masses.append(data['fuel_mass'])
+            ox_masses.append(data['ox_mass'])
+            tank_lengths.append(data['tank_length'])  # Length of tank [m]
+            fuel_mdot_array.append(data['fuel_mass'] / self.burn_time)  # Fuel mass flow rate in kg/s
+            ox_mdot_array.append(data['ox_mass'] / self.burn_time)  # Oxidizer mass flow rate in kg/s
+        
+        # Get the index of the target O/F ratio
+        total_ox_mass = ox_masses[of_array.index(target_of)]  # Total oxidizer mass in kg
+        total_fuel_mass = fuel_masses[of_array.index(target_of)]  # Total fuel mass in kg
+        tank_length = tank_lengths[of_array.index(target_of)]  # Length of tank [m]
+        tank_mass = (tank_length * tank_mass_per_meter)+2  # Mass of the tank plus some extra mass for the tank structure (end caps, welds, internal pipes) [kg]
+        ox_mdot = ox_mdot_array[of_array.index(target_of)]  # Oxidizer mass flow rate in kg/s for target O/F ratio
+        fuel_mdot = fuel_mdot_array[of_array.index(target_of)]  # Fuel mass flow rate in kg/s for target O/F ratio
+        
+        rocket_mass = total_ox_mass + total_fuel_mass + recovery_mass + engine_mass + payload_mass + tank_mass  # Total mass of the rocket in kg
+        
+        # Setup time array
+        times = np.arange(0, self.burn_time, dt)
+        A = np.pi * (0.152 / 2) ** 2  # Cross-sectional area of the rocket in m^2 (diameter of 0.152 m)
+
+
+        for t in times:
+            m = rocket_mass - (ox_mdot + fuel_mdot) * t
+            g = self.calc_gravity(h)
+            rho = self.calc_air_density(h)
+            drag = 0.5 * rho * self.Cd * A * v**2
+            if v < 0: drag *= -1  # drag always opposes motion
+
+            a = (self.thrust - m * g - drag) / m
+            v += a * dt
+            h += v * dt
+            acceleration.append(a)
+            velocities.append(v)
+            altitudes.append(h)
+            machs.append(v/c)
+            # print(f"Time: {t:.2f} s, Velocity: {v:.2f} m/s mach {v/c}, Altitude: {h:.2f} m, Mass: {m:.2f} kg")  # Print the time, velocity, altitude, and mass at each time step
+
+        # After burnout (coasting, no thrust)
+        v_burnout = velocities[-1]
+        h_burnout = altitudes[-1]
+        h = h_burnout
+        v = v_burnout
+
+        while v > 0:
+            g = self.calc_gravity(h)
+            rho = self.calc_air_density(h)
+            drag = 0.5 * rho * self.Cd * A * v**2
+            a = -(g + drag / m)
+            v += a * dt
+            h += v * dt
+            t += dt
+            times = np.append(times, t)  # Append the time to the times array
+            altitudes.append(h)  # Append the altitude to the altitudes array
+            acceleration.append(a)  # Append the acceleration to the acceleration array
+            velocities.append(v)  # Append the velocity to the velocities array
+            machs.append(v/c) # Append the Mach number to the machs array
+
+            # print(f"Time: {t:.2f} s, Velocity: {v:.2f} m/s, mach {v/c}, Altitude: {h:.2f} m, Mass: {m:.2f} kg")  # Print the time, velocity, altitude, and mass at each time step
+
+
+        print(f"Final Time: {t:.2f} s, Final Velocity: {v:.2f} m/s, Final Altitude: {h:.2f} m, Final Mass: {m:.2f} kg")  # Print the final time, velocity, altitude, and mass
+        # Display data
+        print(f"Total wet mass of the rocket: {rocket_mass:0.2f} kg, Total dry mass: {recovery_mass + engine_mass + payload_mass + tank_mass} for O/F ratio of {target_of}")  # Print the total mass of the rocket
+        print(f"Total oxidizer mass: {total_ox_mass:0.2f} kg \nTotal fuel mass: {total_fuel_mass:.2f} kg \nTank Length: {tank_length:.2f} m \nTank Mass: {tank_mass:.2f} kg \nEngine Mass: {engine_mass} kg \nPayload: {payload_mass} kg")  # Print the total oxidizer and fuel mass
+        print(f"Estimated altitude reached: {h:.2f} m")  # Print the estimated altitude reached by the rocket
+        plt.figure(figsize=(8, 5))
+        plt.plot(times, altitudes, label='Altitude (m)')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Altitude (m)')
+        plt.title(f'Altitude vs Time for O/F={target_of}')
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+        plt.figure(figsize=(8, 5))
+        plt.plot(times, machs, label='mach')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Velocity (m/s)')
+        plt.title(f'Velocity vs Time for O/F={target_of}')
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+        plt.figure(figsize=(8, 5))
+        plt.plot(times, acceleration, label='Acceleration (m/s²)')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Acceleration (m/s²)')
+        plt.title(f'Acceleration vs Time for O/F={target_of}')
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+        pass
+
+
+
 def RS25_Design():
     # FUNCTION WORKSPACE
     # This function will be used to run through the steps to design the RS25 rocket engine
@@ -480,7 +685,7 @@ def RS25_Design():
     engine_thrust_n = engine_thrust_lb * 4.44822  # Convert lbf to N
     number_of_engines = 3  # Number of RS25 engines
     # Function to run rocket engine calculations/design
-    RS25 = RocketEngine('LOX', 'LH2', Pc, expansion_ratio, burn_time, engine_thrust_n, num_engines=number_of_engines) # Verification Engine: RS25 - Cryo-rocket.com
+    RS25 = RocketEngine('LOX', 'LH2', Pc, expansion_ratio, burn_time, engine_thrust_n, num_engines=number_of_engines, Cd = 0.2) # Verification Engine: RS25 - Cryo-rocket.com
     engine_name = 'RS25'  # Name of the engine for display purposes
 
     of_ratios = np.arange(0.8, 21, 0.1)  # Define O/F ratios for the RS25 engine
@@ -509,13 +714,11 @@ def The5k():
     rocketMass = 90.0 # Estimated mass of the rocket in kg
     desired_engine_thrust = 5000 # Estimated thrust sea level  [N]
     Pc = 20 # Chamber presssure in bar (desired)
-    fuel_stroage_density = 737.9  # Density of RP-1 in kg/m^3 (approximate)
+    fuel_stroage_density = 795.6  # Density of RP-1 in kg/m^3 (approximate)
     ox_storage_density = 1140.0  # Density of LOX in kg/m^3 (approximate)
-    burn_time = 40  # Estimated burn time in seconds
+    burn_time = 23  # Estimated burn time in seconds
     expansion_ratio = 69  # No fixed expansion ratio for the 5k engine yet... 
 
-    
-    
     # Calculate thrust to weight ratio
     thrust_to_weight_ratio = desired_engine_thrust / (rocketMass * g)  # Thrust to weight ratio
 
@@ -523,9 +726,10 @@ def The5k():
     of_ratios = np.arange(0.5, 7, 0.1)  # Define O/F ratios for the 5k engine
 
     # Function to run rocket engine calculations/design
-    The5k = RocketEngine('LOX', 'RP-1', Pc, expansion_ratio, burn_time, desired_engine_thrust, num_engines=1) # Verification Engine: RS25 - Cryo-rocket.com
-    The5k.display_MR_curves(of_ratios, fuel_stroage_density, ox_storage_density, engine_name=engine_name, target_of=2) # Display the performance curves for the 5k engine to determine optimal O/F
+    The5k = RocketEngine('LOX', 'RP-1', Pc, expansion_ratio, burn_time, desired_engine_thrust, num_engines=1, Cd = 0.4) # Verification Engine: RS25 - Cryo-rocket.com
+    of_data = The5k.display_MR_curves(of_ratios, fuel_stroage_density, ox_storage_density, engine_name=engine_name, target_of=2) # Display the performance curves for the 5k engine to determine optimal O/F
 
+    The5k.estimate_altitude(of_data, target_of=2, dt=0.1, recovery_mass=5, engine_mass=10, payload_mass=2, tank_mass_per_meter=6)  # Estimate altitude the rocket will reach with the optimal O/F ratio
     pass
 
 def  main():
