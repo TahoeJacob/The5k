@@ -1999,10 +1999,9 @@ def main():
     print(f'Calculated Engine Geometry: \n A_c: {A_c[0]} [m^2] D_c {D_c} [m] R_c {r_c} [m] \n A_t: {A_t[0]} [m^2] D_t {D_t} [m] Rt {r_t} [m] \n A_e: {A_e[0]} [m^2] D_e: {D_e} [m] R_e: {r_e} [m] \n L_c: {L_c[0]} [m] \n L_e {L_e[0]} [m] \n Engine Length {L_c[0] + L_e[0]} [m] \n mdot_chamber: {mdot_chamber[0]} [kg/s]')
     
     # plot_bell_nozzle_rrs(R_t, expRatio, R_c, L_c, l_percent=80, theta_c_deg=theta_c_deg, theta_n_deg=30, theta_e_deg=12, r_conv_mult=1.75, r_throat_conv_mult=1.5, r_throat_div_mult=0.382, num_points=120)
-    print(f'Calculated Engine Geometry: \n A_c: {A_c[0]} [m^2] D_c {D_c} [m] R_c {R_c} [m] \n A_t: {A_t} [m^2] D_t {D_t} [m] Rt {R_t} [m] \n A_e: {A_e[0]} [m^2] D_e: {D_e} [m] R_e: {R_e} [m] \n L_c: {L_c} [m] \n L_e [m] {L_e[0]} \n mdot_chamber: {mdot_chamber[0]} [kg/s]')
     
     # Cooling Channel Geometry
-    circt = 2*np.pi*R_t # Circumference of the throat [m]
+    circt = 2*np.pi*r_t # Circumference of the throat [m]
     L = 2E-3
     min_chan_land = 0.8E-3 # Minimum channel land [m] 0.8mm
     min_chan_w = 1.5E-3 # Minimum channel width [m] 1.5mm ADJUST THIS VALUE TO ADJUST LAND WIDTH
