@@ -163,4 +163,49 @@ def main():
     ax1.set_xlim(0, 0.6)
     return None
 
+
+
+    #++++++++++++++++++++++++++++++++++++++++++++
+    # SECTION 3
+    #++++++++++++++++++++++++++++++++++++++++++++
+    # Upgraded code for getting correct values which takes into account peaks and instability in the answer. 
+
+    vale = np.arange(0.059, 0.08, 0.00001)
+    potential_sol = []
+    vale = [0.05961] 
+    # Initial loop which will be used to calculate first heat transfer data
+    for M_c_RS25 in vale:
+        # Assuming calc_flow_data function is defined elsewhere and returns the relevant values
+        dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, M_c_RS25, engine_info.P_c, engine_info.T_c, keydata)  # Corrected the function call with M_c_RS25
+        # Determine the largest delta
+        # Compute Mach from yp_m
+        mach = np.array([np.sqrt(yp[0]) for yp in yp_m])
+        peaks, _ = find_peaks(mach)  # tune prominence
+        # print("peaks", peaks, mach[peaks], val_diffs)
+        print(M_c_RS25)
+
+        if (np.sqrt(yp_m[np.argmax([t[0] for t in yp_m])][0]) > 2.0) :  # If the maximum Mach number is greater than 1
+            index = np.argmax([t[0] for t in yp_m])  # Extract the index of largest value from the yp_m tuple array
+            print("above Mach 1", M_c_RS25, index, "peaks:", mach[peaks], len(potential_sol))
+            if index > len(xp_m) - 30 and peaks.size == 0:  # Check if the index is within the last 30 values and no peaks
+                print(M_c_RS25, "POTENTIAL SOLUTION")
+                potential_sol.append(M_c_RS25)
+    
+    print(potential_sol)
+    
+    
+    # Plot using display units (stretch y-axis)
+    fig, ax = plt.subplots(figsize=(9, 7))  # taller figure to stretch y
+    ax.plot(xp_m, mach, '-b', lw=2, label='Mach Number')
+
+    # Reference
+    for peak in peaks:
+        ax.scatter([xp_m[peak]], [mach[peak]], c='k', s=25, zorder=5, label=f'Peak {peak}')
+        ax.axvline(0, color='k', lw=0.8, ls='--', alpha=0.6)
+
+    # Let y stretch freely (avoid equal aspect squashing)
+
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='upper right', fontsize=8)
+    fig.tight_layout()
 main()

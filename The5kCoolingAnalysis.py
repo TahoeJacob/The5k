@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import scipy.optimize as scipy
 from scipy.interpolate import interp1d
+from scipy.signal import find_peaks
 from adjustText import adjust_text
 from CoolProp.CoolProp import PropsSI
 import cantera as ct
@@ -128,7 +129,7 @@ def calc_chamber_length(A_c, V_c):
     return V_c/A_c
 
 # Function which calculates general engine geometry based off CEA data
-def engine_geometry(gam, P_c, P_amb, T_c, F_Vac, expExit, contChamber, L_star, Ru, Rd, alpha, vacuum_opt, showPlots):
+def engine_geometry(gam, P_c, P_amb, T_c, F_Vac, expExit, contChamber, L_star, RU, RD, theta_c_deg, alpha, vacuum_opt, showPlots):
     # Calculate the geometry of a rocket engine based off key parameters from CEA
     # Inputs:
     # df - type: data frame - dataframe containing the CEA data
@@ -219,14 +220,26 @@ def engine_geometry(gam, P_c, P_amb, T_c, F_Vac, expExit, contChamber, L_star, R
     # Determine chamber volume 
     V_c = A_t*(L_star*0.0254) # Calculate chamber volume [m^3] ()
     A_c = A_t * contChamber #calc_chamber_area(A_t) # m^2
-    L_c = V_c/A_c #calc_chamber_length(A_c, V_c) # Calculate chamber length [m]
+    R_c = np.sqrt(A_c/np.pi) # Throat Radius [m]
+
+    L_cone = (R_t*(np.sqrt(contChamber)-1) + (RU*R_t)*(1/np.cos(np.deg2rad(theta_c_deg)) -1))/(np.tan(np.deg2rad(theta_c_deg))) # Convergent cone length
+    V_cone = np.pi/3 * L_cone*(R_c**2 + R_t**2 + (R_t*R_c))
+    V_chamber = V_c[0] - V_cone
+    L_chamber = V_chamber/(contChamber*A_t[0])
+    L_c = L_chamber + L_cone # Total chamber length
     # Determine chamber area
 
     # Determine chamber length from Injector to throat
 
     # Determine length from throat to exit plane
-    R_U = R_t*Ru
-    L_e = 0.8*(R_t * (np.sqrt(expExit)-1) + R_U*(1/np.cos(np.deg2rad(alpha-1))))/(np.tan(np.deg2rad(alpha)))
+
+    # Calculate length of exit nozzle
+    Re = np.sqrt(expExit) * R_t
+    Lrao = ((np.sqrt(expExit) - 1.0) * R_t) / np.tan(np.deg2rad(15.0))
+    L_e   = (80/100.0) * Lrao
+    
+    # R_U = R_t*Ru
+    # L_e = 0.8*(R_t * (np.sqrt(expExit)-1) + R_U*(1/np.cos(np.deg2rad(alpha-1))))/(np.tan(np.deg2rad(alpha)))
 
     # Determine throat area for RS25
     A_t = A_t_array[position_65[0]]
@@ -275,106 +288,212 @@ def displayEngineGeometry2(x_array, A_c, A_t, A_e, L_c):
     create_plot(x_array[:len(r_array)], r_array, 'Distance from Injector [m]', 'Radius [m]', 'Radius vs Distance from Injector')
     return None
 
-
-# Function to calculate raduys of chamber based off x
-def calc_radius(x, L_star, A_c, A_t, A_e, L_c, Ru, Rd, theta_1, theta_D, alpha):
-    # Inputs:
-    # x - type: float - distance from injector [m]
-    # A_c - type: float - chamber area [m^2]
-    # A_t - type: float - throat area [m^2]
-    # A_e - type: float - exit area [m^2]
-    # L_c - type: float - chamber length [m]
-    # Ru - type: float - radius of contraction [m]
-    # Rd - type: float - radius of throat curve [m]
-    # theta1 - type: float - angle of contraction [degrees]
-    # thetaD - type: float - angle of expansion [degrees]
-    # thetaE - type: float - angle of exit [degrees]
-
-    # Output:
-    # r - type: float - radius of chamber at x [inch]
-
-    D_c = 2*np.sqrt(A_c/np.pi) # Calculate chamber diameter [m]
-    D_t = 2*np.sqrt(A_t/np.pi) # Calculate throat diameter [m]
-    D_e = 2*np.sqrt(A_e/np.pi) # Calculate exit diameter [m]
-
-    # Convert L_c to inch
-
-    # Calculate expansion ratio
-    expansion_ratio = A_e/A_t
-
-    contraction_ratio = A_c/A_t # Calculate contraction ratio
-    R_T = D_t/2 # Radius of throat [m]
-    R_C = D_c/2 # Radius of chamber [m]
-
-    # Calculate geometty
-    R_U = R_T * Ru # Radius of contraction [m]
-    R_D = R_T * Rd # Radius of throat curve [m]
-    R_1 = R_T * Ru # Radius of contraction [m]
-    R_E = np.sqrt(expansion_ratio)*R_T # Radius of expansion [m]
-
-    # Calculate volume of chamber
-    V_c = A_t*L_star # Volume of chamber [m^3]
-
-
-    # calculate the length of the cone section 
-    L_cone = (R_T*(np.sqrt(contraction_ratio)-1) + R_U*((1/np.cos(np.deg2rad(theta_1)))-1))/np.tan(np.deg2rad(theta_1))
-
-    # Using cone frustume volume formula calculate the approximate cone volume
-    V_cone = (np.pi/3) * L_cone*(R_C**2 + R_T**2 + R_T*R_C) # Volume of cone frustum [m^3]
-
-    # Calculate the required volume for the culindrical chamber section
-    V_cyl = V_c - V_cone # Volume of cylindrical section [m^3]
-
-    # Calculate the length of the cylindrical section
-    L_e = V_cyl/(contraction_ratio*A_t)
-
-    L_c = L_cone + L_e # Total length of chamber from injector to throat [m]
-
-
-    # Define key constants for RS25 engine @TODO need to replace with actual values for own engine
-    # L_e = 5.339 # Length before chamber starts contracting [m]
-    #theta_E = 5.3738 # Angle of exit [degrees]
-    # R_1 = 1.73921 * R_T # Radius of contraction [m]
-    #R_U = 0.494 * R_T # Radius of contraction [m]
-    # R_U = 5.1527 # Small Throat RU
-    # R_D  = 2.019 # Radius of sma;;throat curve [m]
-    #R_D = 0.2 * R_T # Radius of throat curve [m]
-
-    print(f'A_t [m^2]: {A_t} \n D_t [m] {D_t} \n R_t [m]: {R_T} \n D_e: {D_e} \n R_E [m]: {R_E} \n V_c [m^3]: {V_c} \n D_c [m]: {D_c} \n R_C [m]: {R_C} \n L_cone [m]: {L_cone} \n V_cone [m^3]: {V_cone} \n V_cyl [m^3]: {V_cyl} \n L_e [m]: {L_e} \n L_c [m]: {L_c}')
-    # Calculate length from throat to exit plane
-    L = 0.8*(R_T * (np.sqrt(expansion_ratio)-1) + R_U*(1/np.cos(np.deg2rad(alpha-1))))/(np.tan(np.deg2rad(15)))
-    #L_N = 0.8 * ((np.sqrt(expansion_ratio)-1)*D_t_inch/2)/(np.tan(np.deg2rad(15)))
-     
-    # Constant def
-    m = (R_T + R_U - D_c/2 + R_1 - (R_U+R_1)*np.cos(np.deg2rad(theta_1)))/(L_c - L_e - (R_U + R_1)*np.sin(np.deg2rad(theta_1)))
     
-    if x <= L_e:
-        r = D_c/2
-    elif (L_e < x) and (x <= L_e + R_1*np.sin(np.deg2rad(theta_1))):
-       
-        r = np.sqrt(R_1**2 - (x-L_e)**2) + D_c/2 - R_1
-    elif (L_e + R_1*np.sin(np.deg2rad(theta_1)) < x) and (x <= L_c - R_U*np.sin(np.deg2rad(theta_1))):
-        r = (m*x + D_c/2 - R_1 + R_1*np.cos(np.deg2rad(theta_1)) - m*(L_e + R_1*np.sin(np.deg2rad(theta_1))))
-    elif (L_c - R_U*np.sin(np.deg2rad(theta_1)) < x) and (x <= L_c):
-        r = -np.sqrt(R_U**2 - (x-L_c)**2) + R_T + R_U
-    elif (L_c < x) and (x <= L_c + R_D*np.sin(np.deg2rad(theta_D))):
-        r = -np.sqrt(R_D**2 - (x - L_c)**2) + R_T + R_D
-    else:
-        # Calculate key constants
-        N_x = R_D * np.cos(np.deg2rad(theta_D) - np.pi/2) 
-        N_y = R_D * np.sin(np.deg2rad(theta_D) - np.pi/2) + R_D + R_T
-        E_x = 0.8*(R_T * (np.sqrt(expansion_ratio)-1) + R_U*(1/np.cos(np.deg2rad(alpha-1))))/(np.tan(np.deg2rad(15))) # 80% Rau nozzle length
-        E_y = R_E # Radius of exit
-        Q_x = (E_y - np.tan(np.deg2rad(alpha))*E_x - N_y + np.tan(np.deg2rad(theta_D))*N_x)/(np.tan(np.deg2rad(theta_D)) - np.tan(np.deg2rad(alpha)))
-        Q_y = (np.tan(np.deg2rad(theta_D))*(D_e/2 - np.tan(np.deg2rad(alpha))*E_x) - np.tan(np.deg2rad(alpha))*(N_y - np.tan(np.deg2rad(theta_D))*N_x))/(np.tan(np.deg2rad(theta_D)) - np.tan(np.deg2rad(alpha)))
-
-        # Calculate t(x)
-        t_x = (-2*Q_x + np.sqrt(4*Q_x**2 - 4*(N_x - x + 15.444)*(-N_x - 2*Q_x + E_x)))/(2*(-N_x - 2*Q_x + E_x))
-        r_t = ((1-t_x)**2)*N_y + 2*(t_x - t_x**2)*Q_y + (t_x**2) * R_E
-        r = r_t
-    return r # Radius in [m]
+def compute_rrs_profile(
+    Rt,                         # Radius of throat [m]
+    Rc,                         # Radius of chamber [m]
+    A_e,                        # Area of exit [m^2]
+    A_t,                        # Area of throat [m^2]
+    L_c,                        # Length of chamber (injector -> throat) [m]
+    l_percent=80,               # % of bell nozzle (80% default)
+    theta_c_deg=30,             # Chamber contraction half ngle
+    theta_n_deg=30,             # Expansion half hangle
+    theta_e_deg=15,             # Explasion half angle
+    r_conv_mult=1.75,           # Convergence multiplier
+    r_throat_conv_mult=1.5,     # Throat convergence radius multiplier 
+    r_throat_div_mult=0.382,    # Throat expansion radius mulitplier 
+):
     
-  
+
+    # Angles
+    th_c = np.deg2rad(theta_c_deg)
+    th_n = np.deg2rad(theta_n_deg)
+    th_e = np.deg2rad(theta_e_deg)
+
+    # Exit data from area ratio
+    epsilon = A_e / A_t
+    Re = np.sqrt(epsilon) * Rt
+    Lrao = ((np.sqrt(epsilon) - 1.0) * Rt) / np.tan(np.deg2rad(15.0))
+    Ln   = (l_percent/100.0) * Lrao
+
+    # Throat fillets (throat-centered frame, throat at x=0)
+    r1 = r_throat_conv_mult * Rt
+    r2 = r_throat_div_mult * Rt
+
+    # Converging-side throat fillet f5
+    a1_start = np.deg2rad(-(90 + theta_c_deg))
+    xP4 = r1*np.cos(a1_start)  # where it joins the -theta_c line
+    yP4 = r1*np.sin(a1_start) + (r1 + Rt)
+
+    # Diverging-side throat fillet f4 → N (start of bell)
+    a2_end = np.deg2rad(theta_n_deg - 90)
+    Nx = r2*np.cos(a2_end)
+    Ny = r2*np.sin(a2_end) + (r2 + Rt)
+
+    # Exit point in throat-centered frame
+    Ex = Ln
+    Ey = Re
+
+    # Converging geometry f2: big circle tangent to straight and to -theta_c line at P4
+    rc = r_conv_mult * Rt
+    mc = -np.tan(th_c)               # slope of -theta_c line
+    bc = yP4 - mc*xP4                # line through P4
+    yc = Rc - rc                     # center y so it's tangent to y=Rc (top point)
+    s = np.sqrt(mc*mc + 1.0)
+    # choose upstream x center
+    xc_plus  = (yc - bc + rc*s)/mc
+    xc_minus = (yc - bc - rc*s)/mc
+    xc = xc_minus if xc_minus < xc_plus else xc_plus
+
+    # Tangency point P3 of -theta_c line with the f2 circle
+    S = mc*xc - yc + bc
+    xP3 = xc - mc * S / (mc*mc + 1.0)
+    yP3 = yc + S / (mc*mc + 1.0)
+
+    # Axial distances
+    # top of f2 (tangent to straight) is at x = xc (throat-centered)
+    L_conv = -xc                 # axial distance P2→throat
+    L_straight = L_c - L_conv     # injector straight length
+
+    # Bézier control point from slope matching at N and E
+    m1, m2 = np.tan(th_n), np.tan(th_e)
+    C1 = Ny - m1*Nx
+    C2 = Ey - m2*Ex
+    Qx = (C2 - C1) / (m1 - m2)
+    Qy = (m1*C2 - m2*C1) / (m1 - m2)
+
+    # Shift everything to injector-centered x by +Lc
+    shift = L_c
+    centers = {
+        "c5x": shift,     "c5y": r1 + Rt,    # f5 center (conv throat fillet)
+        "c4x": shift,     "c4y": r2 + Rt,    # f4 center (div throat fillet)
+        "c2x": xc+shift,  "c2y": yc,         # f2 big arc
+    }
+
+    # Key x breakpoints in injector-centered system
+    x_throat = L_c
+    xP2 = xc + shift    # start of f2 (end of straight)
+    xP3s = xP3 + shift  # end of f2
+    xP4s = xP4 + shift  # end of short line
+    xNs = Nx + shift    # start of Bézier bell
+    xExit = Ex + shift  # exit
+
+    prof = dict(
+        # geometry scalars
+        Rt=Rt, Rc=Rc, Re=Re, epsilon=epsilon, Ln=Ln,
+        # angles
+        th_c=th_c, th_n=th_n, th_e=th_e,
+        # fillet and big-arc radii
+        r1=r1, r2=r2, rc=rc,
+        # centers
+        centers=centers,
+        # joints (throat-centered y unchanged by shift)
+        xP2=xP2, xP3=xP3s, yP3=yP3, xP4=xP4s, yP4=yP4,
+        xN=xNs, yN=Ny, xExit=xExit, yExit=Ey,
+        # throat and shift
+        x_throat=x_throat, shift=shift,
+        # straight length info (may be zero)
+        L_straight=L_straight,
+        # Bézier control (throat-centered)
+        Nx=Nx, Ny=Ny, Ex=Ex, Ey=Ey, Qx=Qx, Qy=Qy,
+        mc=mc,
+    )
+    return prof
+#A_c, A_t, A_e, L_c
+def calc_radius(
+        x,          # Desired x location along engine 
+        A_c,        # Area of chamber [m^2]
+        A_t,        # Area of throat [m^2]
+        A_e,        # Area of the exit [m^2]
+        L_c):       # Length of chamber (Injector -> Throat) [m]
+        """
+        Evaluate radius y(x) [m] for scalar or array x using 'prof' from compute_rrs_profile.
+        x is measured from injector face (injector at 0).
+        """
+        # Calculate radiusus
+        Rc = np.sqrt(A_c/np.pi) # radius of chamber [m]
+        Rt = np.sqrt(A_t/np.pi) # radius of throat [m]
+        Re = np.sqrt(A_e/np.pi) # radius of exit [m]
+
+        # Get prof 
+        prof = compute_rrs_profile(Rt, Rc, A_e, A_t, L_c)
+
+        # Unpack
+        Rc = prof["Rc"]; Rt = prof["Rt"]
+        r1 = prof["r1"]; r2 = prof["r2"]; rc = prof["rc"]
+        centers = prof["centers"]
+        xP2 = prof["xP2"]; xP3 = prof["xP3"]; yP3 = prof["yP3"]
+        xP4 = prof["xP4"]; yP4 = prof["yP4"]
+        xN  = prof["xN"];  xExit = prof["xExit"]; yExit = prof["yExit"]
+        x_throat = prof["x_throat"]; shift = prof["shift"]
+        Nx = prof["Nx"]; Ny = prof["Ny"]; Ex = prof["Ex"]; Ey = prof["Ey"]; Qx = prof["Qx"]; Qy = prof["Qy"]
+        th_e = prof["th_e"]; mc = prof["mc"]
+
+        a = Nx - 2*Qx + Ex
+        b = 2*(Qx - Nx)
+        # c(x) used for quadratic in t will be set inside evaluator
+
+        # Scalar evaluator
+        def _y_scalar(xv: float) -> float:
+            # Left of injector: clamp to chamber line
+            if xv <= 0.0:
+                return Rc
+
+            # f1: straight chamber
+            if xv <= xP2:
+                return Rc
+
+            # f2: big arc (center at c2x, c2y)
+            if xv <= xP3:
+                dx = xv - centers["c2x"]
+                val = rc*rc - dx*dx
+                val = 0.0 if val < 0 else val
+                return centers["c2y"] + np.sqrt(val)
+
+            # f3: short line P3 -> P4 with slope mc
+            if xv <= xP4:
+                return mc*(xv - xP4) + yP4
+
+            # f5: converging throat fillet (center shift, c5y), x in [xP4, x_throat]
+            if xv <= x_throat:
+                dx = xv - centers["c5x"]
+                val = r1*r1 - dx*dx
+                val = 0.0 if val < 0 else val
+                return centers["c5y"] - np.sqrt(val)
+
+            # f4: diverging throat fillet (center shift, c4y), x in [x_throat, xN]
+            if xv <= xN:
+                dx = xv - centers["c4x"]
+                val = r2*r2 - dx*dx
+                val = 0.0 if val < 0 else val
+                return centers["c4y"] - np.sqrt(val)
+
+            # f6: Bézier bell N -> Exit; solve x(t) in throat-centered coords
+            if xv <= xExit:
+                # convert to throat-centered x
+                x_tc = xv - shift
+                cc = Nx - x_tc  # c in a t^2 + b t + c = 0
+                if abs(a) < 1e-14:
+                    t = -cc/b
+                else:
+                    disc = b*b - 4*a*cc
+                    disc = 0.0 if disc < 0 else disc
+                    sqrt_disc = np.sqrt(disc)
+                    t1 = (-b + sqrt_disc)/(2*a)
+                    t2 = (-b - sqrt_disc)/(2*a)
+                    t_candidates = [t for t in (t1, t2) if -1e-9 <= t <= 1+1e-9]
+                    t = t_candidates[0] if t_candidates else np.clip(t1, 0.0, 1.0)
+                return (1 - t)**2 * Ny + 2*(1 - t)*t * Qy + t**2 * Ey
+
+            # Beyond exit: extend with exit tangent
+            return yExit + np.tan(th_e) * (xv - xExit)
+
+        xv = np.asarray(x)
+        if xv.ndim == 0:
+            return float(_y_scalar(float(xv)))
+        return np.vectorize(_y_scalar, otypes=[float])(xv)
+
+
 # Function to calculate the central finite difference
 def central_finite_difference(func, x, h, *args):
     # Inputs:
@@ -1431,7 +1550,7 @@ def calc_q_wall(dx, x, y, T_hw, T_cw, engine_info):
 
 # Define a class which holds the engine information
 class EngineInfo:
-    def __init__(self, gam, C_star, M_c, P_c, T_c, Cp, F_Vac, Ncc, combustion_molecules, A_c, A_t, A_e, L_c, x_j, chan_land, chan_w, chan_h, chan_t, gas, mdot_LH2, e, k, mdot_chamber, RD, RU, R1, theta1, thetaD, thetaE):
+    def __init__(self, gam, C_star, M_c, P_c, T_c, Cp, F_Vac, Ncc, combustion_molecules, A_c, A_t, A_e, r_t, r_c, L_c, x_j, chan_land, chan_w, chan_h, chan_t, gas, mdot_LH2, e, k, mdot_chamber, RD, RU, R1, theta1, thetaD, thetaE):
         # Initialize the engine information
         # Inputs:
         self.gam = gam  # Specific heat ratio
@@ -1446,6 +1565,8 @@ class EngineInfo:
         self.A_c = A_c  # Combustion chamber area [m^2]
         self.A_t = A_t  # Throat area [m^2]
         self.A_e = A_e  # Exit area [m^2]
+        self.r_t = r_t  # Throat radius [m]
+        self.r_c = r_c  # Chamber radius [m]
         self.L_c = L_c  # Chamber length [m]
         self.x_j = x_j  # Array of x values from throat which will be used to calculate the channel geometry [m]
         self.chan_land = chan_land  # Channel land [m]
@@ -1601,6 +1722,7 @@ class EngineInfo:
         return np.pi * (self.get_radius(x)**2)  # Calculate area using A = πr²
     
 
+
 def newton_solve_temperatures(dx, x, y, s, T_LH2, P_LH2, engine_info, 
                               T_hw_init, T_cw_init, 
                               tol=0.1, max_iter=50):
@@ -1650,6 +1772,7 @@ def newton_solve_temperatures(dx, x, y, s, T_LH2, P_LH2, engine_info,
 
     raise RuntimeError("Newton-Raphson did not converge.")
 
+
 def plot_bell_nozzle_rrs(
     Rt,
     epsilon,
@@ -1662,8 +1785,8 @@ def plot_bell_nozzle_rrs(
     r_conv_mult=1.75,         # large converging radius (f2) = r_conv_mult*Rt
     r_throat_conv_mult=1.5,   # converging-side throat fillet (f5)
     r_throat_div_mult=0.382,  # diverging-side throat fillet (f4)
-    num_points=200,
-    display_units='mm'         # 'm' or 'mm' for plotting/printing only
+    num_points=120,
+    display_units='m'         # 'm' or 'mm' for plotting/printing only
 ):
     # Unit scaling for display (internal calculations remain in meters)
     if str(display_units).lower() == 'mm':
@@ -1677,6 +1800,7 @@ def plot_bell_nozzle_rrs(
     th_n = np.deg2rad(theta_n_deg)
     th_e = np.deg2rad(theta_e_deg)
 
+    # Calculate length of exit nozzle
     Re = np.sqrt(epsilon) * Rt
     Lrao = ((np.sqrt(epsilon) - 1.0) * Rt) / np.tan(np.deg2rad(15.0))
     Ln   = (l_percent/100.0) * Lrao
@@ -1720,6 +1844,7 @@ def plot_bell_nozzle_rrs(
 
     # Short straight connector P3 -> P4 along -theta_c
     x_f3 = np.linspace(xP3, xP4, max(2, num_points//8))
+    print("HERE",x_f3)
     y_f3 = mc*(x_f3 - xP4) + yP4
 
     # IMPORTANT: fix straight-chamber length to satisfy injector-to-throat Lc
@@ -1744,6 +1869,14 @@ def plot_bell_nozzle_rrs(
     x_f6 = (1 - t)**2 * Nx + 2*(1 - t)*t * Qx + t**2 * Ex
     y_f6 = (1 - t)**2 * Ny + 2*(1 - t)*t * Qy + t**2 * Ey
 
+    # Shift x axis by Lc
+    x_f1 += Lc
+    x_f2 += Lc
+    x_f3 += Lc
+    x_f5 += Lc
+    x_f4 += Lc
+    x_f6 += Lc
+    # print(x_f1, x_f2)
     # Compose polyline (meters)
     x = np.concatenate([x_f1, x_f2, x_f3, x_f5, x_f4, x_f6])
     y = np.concatenate([y_f1, y_f2, y_f3, y_f5, y_f4, y_f6])
@@ -1759,7 +1892,7 @@ def plot_bell_nozzle_rrs(
     ax.plot(x_f6*sf, y_f6*sf, '-y', lw=2, label='f6: bell (Bézier)')
 
     # Reference
-    ax.scatter([0], [Rt*sf], c='k', s=25, zorder=5, label='Throat (Rt)')
+    ax.scatter([Lc], [Rt*sf], c='k', s=25, zorder=5, label='Throat (Rt)')
     ax.axvline(0, color='k', lw=0.8, ls='--', alpha=0.6)
 
     # Let y stretch freely (avoid equal aspect squashing)
@@ -1814,24 +1947,26 @@ def main():
     # theta1 = 25 #25.4157 # Radius of throat angle 
     # thetaD = 37 # Angle of expansion [degrees]
     # thetaE =  5.3738 # half-angle of the nozzle [degrees]
+    # theta_c_deg = 30 # nozzle contraction half angle
+
 
     # Constants 5kN Enginer LOX/RP1
     gam = 1.168 # Specific heat ratio  - CEA data
-    C_star = 1783 # Characteristic velocity in [m/s] - CEA data
+    C_star = 1784 # Characteristic velocity in [m/s] - CEA data
     P_c = 2E6 # Chamber stagnation pressure in [Pa] - CEA data
     T_c = 3254 # Chamber stagnation temperature in [K] - CEA data
     Cp = 3.71330E3	 # Specific heat at constant pressure in [J/KgK] - CEA data
     F_Vac = 5200 # Vacuum thrust in [N] - CEA data
-    M_c = 0.26419 # Injector mach number - calculated by trial and error, testfile.py has a good example of how to do this
+    M_c = 0.05959 # Injector mach number - calculated by trial and error, testfile.py has a good example of how to do this
     Ncc = 390#430.0 # Number of coolant channels - guessed 
     e = 2.5E-7 # Channel wall roughness of Narloy Z [m]
     k = 316  # Thermal conductivity of Narloy Z [W/m*K] 
     mdot_LH2 = 13.2 # kg/s mass flow rate of the LH2 in the coolant channels. 
     meltingpoint = 1000 # Melting point of inconel Z [K]
-    expRatio = 9 # Nozzle expansion ratio
-    contChamber = 7 # Chamber contraction ratio
-    L_star = 43 # L*
-    RU = 1.5 # Radius of contraction 
+    expRatio = 12 # Nozzle expansion ratio
+    contChamber = 10 # Chamber contraction ratio
+    L_star = 45 # L*
+    RU = 1.2 # Radius of contraction 
     RD = 0.385 # Radius of throat curve
     R1 = 1.73921 # Radius of entry curve
     theta1 = 25 #25.4157 # Radius of throat angle 
@@ -1840,41 +1975,39 @@ def main():
     theta_c_deg = 30 # nozzle contraction half angle
 
 
-
-
-
     # Define the molecules in the combustion gases and their molecular masses (Get this from CEA data)
     combustion_molecules = {'H2' : [0.2517, 2.01588E-3], 'O2' : [0.0074,31.9988E-3], 'H2O' :[0.6724,18.01528E-3], 'OH' : [0.036,17.00734E-3], 'H' : [0.02829,1.00794E-3], 'O' : [0.004,15.9994E-3]} # Mole fractions of combustion gases from CEA data
     
      # Create gas object
-    gas = ct.Solution('gri30.yaml')
+    gas = ct.Solution('gri30.yaml')  # Use GRI-Mech 3.0 mechanism as an example
 
+    fluid = "Dodecane"   # surrogate for RP-1
+    T = 308.0            # K
+    P = 101325              # Pa
+
+    rho = PropsSI("D", "T", T, "P", P, fluid)   # density [kg/m3]
+    mu  = PropsSI("V", "T", T, "P", P, fluid)   # viscosity [Pa.s]
+    k   = PropsSI("L", "T", T, "P", P, fluid)   # thermal conductivity [W/m.K]
+    cp  = PropsSI("C", "T", T, "P", P, fluid)   # specific heat [J/kg.K]
+
+    print(f"Density: {rho}, Viscosity: {mu}, Thermal Conductivity: {k}, Specific Heat: {cp}")
 
     # Calculate the engine geometry based off CEA data 
-    A_c, A_t, A_e, L_c, L_e, mdot_chamber, Vc = engine_geometry(gam, P_c, 101325, T_c, F_Vac, expRatio, contChamber, L_star, RU, RD, thetaE, False, False)
+    A_c, A_t, A_e, L_c, L_e, mdot_chamber, Vc = engine_geometry(gam, P_c, 101325, T_c, F_Vac, expRatio, contChamber, L_star, RU, RD, theta_c_deg, thetaE, False, False)
 
     D_t = np.sqrt((4*A_t[0])/np.pi) # Calculate throat diameter [m]
-    R_t = D_t/2 # Calculate throat radius [m]
+    r_t = D_t/2 # Calculate throat radius [m]
     D_c = np.sqrt((4*A_c[0])/np.pi) # Calculate chamber diameter [m]
-    R_c = D_c/2 # Calculate chamber radius [m]
+    r_c = D_c/2 # Calculate chamber radius [m]
     D_e = np.sqrt((4*A_e[0])/np.pi) # Calculate exit diameter [m]
-    R_e = D_e/2 # Calculate exit radius [m]
+    r_e = D_e/2 # Calculate exit radius [m]
 
-    L_cone = (R_t*(np.sqrt(contChamber)-1) + (RU*R_t)*(1/np.cos(np.deg2rad(theta_c_deg)) -1))/(np.tan(np.deg2rad(theta_c_deg))) # Convergent cone length
-    V_cone = np.pi/3 * L_cone*(R_c**2 + R_t**2 + (R_t*R_c))
-    V_chamber = Vc[0] - V_cone
-    L_chamber = V_chamber/(contChamber*A_t[0])
-    L_c = L_chamber + L_cone # Total chamber length
-   
+
     # Plot rocket geometry and get x-axis and radius values
-    x, y = plot_bell_nozzle_rrs(R_t, expRatio, R_c, L_c, l_percent=80, theta_c_deg=20, theta_n_deg=30, theta_e_deg=12, r_conv_mult=1.75, r_throat_conv_mult=1.5, r_throat_div_mult=0.382, num_points=120)
-    
-    print(f'Calculated Engine Geometry: \n A_c: {A_c[0]} [m^2] D_c {D_c} [m] R_c {R_c} [m] \n A_t: {A_t} [m^2] D_t {D_t} [m] Rt {R_t} [m] \n A_e: {A_e[0]} [m^2] D_e: {D_e} [m] R_e: {R_e} [m] \n L_c: {L_c} [m] \n L_e [m] {L_e[0]} \n mdot_chamber: {mdot_chamber[0]} [kg/s]')
-    
-    
+    # plot_bell_nozzle_rrs(r_t, expRatio, r_c, L_c[0], l_percent=80, theta_c_deg=30, theta_n_deg=30, theta_e_deg=12, r_conv_mult=1.75, r_throat_conv_mult=1.5, r_throat_div_mult=0.382, num_points=120)
 
+    print(f'Calculated Engine Geometry: \n A_c: {A_c[0]} [m^2] D_c {D_c} [m] R_c {r_c} [m] \n A_t: {A_t[0]} [m^2] D_t {D_t} [m] Rt {r_t} [m] \n A_e: {A_e[0]} [m^2] D_e: {D_e} [m] R_e: {r_e} [m] \n L_c: {L_c[0]} [m] \n L_e {L_e[0]} [m] \n Engine Length {L_c[0] + L_e[0]} [m] \n mdot_chamber: {mdot_chamber[0]} [kg/s]')
     
-
     # Define chamber channel geometry  
     # Loading geometry data into the engine channels classx
     #x_j = [-35.56, -34.29, -32.41, -30.48, -27.94, -25.4, -22.86, -20.32, -17.78, -15.24, -12.7, -10.16, -8.89, -7.62, -6.35, -5.08, -3.81, -3.048, -2.54, -1.27, 0, 2.54, 5.08, 7.62, 10.16, 12.7, 15.24, 17.78, 20.32, 24.71] # Array of x values from throat which will be used to calculate the channel geometry [m]
@@ -1898,33 +2031,32 @@ def main():
     chan_t =    [0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 00.000711, 0.000711, 0.0007119, 0.000889, 0.000889]  # Array of channel thicknesses from hot side to cold side [m]
 
     # Create an instance of the EngineInfo class to store all engine information in a single object NOTE: All values are in SI units
-    engine_info = EngineInfo(gam, C_star, M_c, P_c, T_c, Cp, F_Vac, Ncc, combustion_molecules, A_c[0], A_t[0], A_e[0], L_c, x_j, chan_land, chan_w, chan_h, chan_t, gas, mdot_LH2, e, k, mdot_chamber, RD, RU, R1, theta1, thetaD, thetaE)
+    engine_info = EngineInfo(gam, C_star, M_c, P_c, T_c, Cp, F_Vac, Ncc, combustion_molecules, A_c[0], A_t[0], A_e[0], r_t, r_c, L_c[0], x_j, chan_land, chan_w, chan_h, chan_t, gas, mdot_LH2, e, k, mdot_chamber, RD, RU, R1, theta1, thetaD, thetaE)
     
+     
     # Display the channel geometry
-    engine_info.displayChannelGeometry() # Display the engine channel geometry
+    # engine_info.displayChannelGeometry() # Display the engine channel geometry
     
     # Calculate flow data (calcualte flow data throughout entire engine at each x value (distance in m from injector) and step size in m)
-    # xi = 0 # Start of chamber [m]
-    # xf = 24.29*0.0254 #135.5 # End of chamber [m]
-    # dx = (24.29/1000)*0.0254 # Step size [m]
+    xi = 0 # Start of chamber [m]
+    xf = L_c[0] + L_e[0] # End of chamber [m]
+    dx = ((L_c[0] + L_e[0])/500) # Step size [m]
+    array_length = int(xf/dx) # Length of the arrays to hold the flow data
 
-    # array_length = int(xf/dx) # Length of the arrays to hold the flow data
     # Initial conditons for thermal analysis set F and Q to zero for isentropic condition.
-    # dF_dx = np.zeros(array_length)  # Thrust gradient array
-    # dQ_dx = np.zeros(array_length) # Heat transfer gradient 
+    dF_dx = np.zeros(array_length+1)  # Thrust gradient array
+    dQ_dx = np.zeros(array_length+1) # Heat transfer gradient 
+
     # Key data to pass to ODE solver
-    # keydata = [engine_info.A_c, engine_info.A_t, engine_info.A_e, engine_info.L_c, engine_info.gam, engine_info.Cp, dF_dx, dQ_dx] # Key data to pass to ODE solver
-
-    # dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, engine_info.M_c, engine_info.P_c, engine_info.T_c, keydata) # returns pressure, temperature, mach number throughout  entire engine at each x value (distance in m from injector) and step size in m
+    keydata = [engine_info.A_c, engine_info.A_t, engine_info.A_e, engine_info.L_c, engine_info.gam, engine_info.Cp, dF_dx, dQ_dx] # Key data to pass to ODE solver    
     
+    dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, engine_info.M_c, engine_info.P_c, engine_info.T_c, keydata) # returns pressure, temperature, mach number throughout  entire engine at each x value (distance in m from injector) and step size in m
+    # create_plot([xp for xp in xp_m], [calc_radius(x, engine_info.A_c, engine_info.A_t, engine_info.A_e, engine_info.L_c) for x in xp_m], "Distance from Injector [m]", "Radius [m]", "Engine Radius vs Distance from Injector")
+    
+    create_plot([xp for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
+    create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
+    create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
 
-    # create_plot([xp for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
-    # create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
-    # create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
-
-    # xp_m = np.arange(xi, xf, dx)  # Create an array of x values from xi to xf with step size dx
-
-    # displayEngineGeometry2(xp_m, A_c, A_t, A_e, L_c)
     plt.show()
 
     
