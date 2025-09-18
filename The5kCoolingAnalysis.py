@@ -17,7 +17,7 @@ from HydrogenModelV2 import para_fraction
 
 # Globals
 Ru = 8.31446261815324 # Univeral gas constant [J/mol*K]
-specificGasConstant = Ru/0.013551 # Specifc gas constant [J/Kmol] (named wrong but cant be arsed to change it)
+specificGasConstant = Ru/0.0275787914406925 # Specifc gas constant [J/Kmol] 
 
 # Function to create plots
 def create_plot(x_axis,y_axis, x_label, y_label, title):
@@ -1962,7 +1962,7 @@ def main():
     e = 2.5E-7 # Channel wall roughness of Narloy Z [m]
     k = 316  # Thermal conductivity of Narloy Z [W/m*K] 
     mdot_LH2 = 13.2 # kg/s mass flow rate of the LH2 in the coolant channels. 
-    meltingpoint = 1000 # Melting point of inconel Z [K]
+    meltingpoint = 600 # Melting point of aluminum [K]
     expRatio = 12 # Nozzle expansion ratio
     contChamber = 10 # Chamber contraction ratio
     L_star = 45 # L*
@@ -1976,21 +1976,11 @@ def main():
 
 
     # Define the molecules in the combustion gases and their molecular masses (Get this from CEA data)
-    combustion_molecules = {'H2' : [0.2517, 2.01588E-3], 'O2' : [0.0074,31.9988E-3], 'H2O' :[0.6724,18.01528E-3], 'OH' : [0.036,17.00734E-3], 'H' : [0.02829,1.00794E-3], 'O' : [0.004,15.9994E-3]} # Mole fractions of combustion gases from CEA data
-    
-     # Create gas object
-    gas = ct.Solution('gri30.yaml')  # Use GRI-Mech 3.0 mechanism as an example
+    combustion_molecules = {'CO' : [0.5643, 28.01E-3], 'CO2' : [0.16295,44.01E-3], 'H' :[1.4813E-3,1.00794E-3], 'HCO' : [4.7993E-5,29.0185E-3], 'H2' : [1.8196E-2,2.016E-3], 'H2O' : [2.3494E-1, 18.02E-3], 'O' : [1.295E-3, 16E-3], 'OH' : [1.5331E-2, 17.007E-3], 'O2' : [1.4587E-3,31.999E-3]} # Mole fractions of combustion gases from CEA data
 
-    fluid = "Dodecane"   # surrogate for RP-1
-    T = 308.0            # K
-    P = 101325              # Pa
+     # Create gas object for chamber estimates
+    gas = ct.Solution('gri30.yaml')
 
-    rho = PropsSI("D", "T", T, "P", P, fluid)   # density [kg/m3]
-    mu  = PropsSI("V", "T", T, "P", P, fluid)   # viscosity [Pa.s]
-    k   = PropsSI("L", "T", T, "P", P, fluid)   # thermal conductivity [W/m.K]
-    cp  = PropsSI("C", "T", T, "P", P, fluid)   # specific heat [J/kg.K]
-
-    print(f"Density: {rho}, Viscosity: {mu}, Thermal Conductivity: {k}, Specific Heat: {cp}")
 
     # Calculate the engine geometry based off CEA data 
     A_c, A_t, A_e, L_c, L_e, mdot_chamber, Vc = engine_geometry(gam, P_c, 101325, T_c, F_Vac, expRatio, contChamber, L_star, RU, RD, theta_c_deg, thetaE, False, False)
@@ -2008,8 +1998,24 @@ def main():
 
     print(f'Calculated Engine Geometry: \n A_c: {A_c[0]} [m^2] D_c {D_c} [m] R_c {r_c} [m] \n A_t: {A_t[0]} [m^2] D_t {D_t} [m] Rt {r_t} [m] \n A_e: {A_e[0]} [m^2] D_e: {D_e} [m] R_e: {r_e} [m] \n L_c: {L_c[0]} [m] \n L_e {L_e[0]} [m] \n Engine Length {L_c[0] + L_e[0]} [m] \n mdot_chamber: {mdot_chamber[0]} [kg/s]')
     
+    # plot_bell_nozzle_rrs(R_t, expRatio, R_c, L_c, l_percent=80, theta_c_deg=theta_c_deg, theta_n_deg=30, theta_e_deg=12, r_conv_mult=1.75, r_throat_conv_mult=1.5, r_throat_div_mult=0.382, num_points=120)
+    print(f'Calculated Engine Geometry: \n A_c: {A_c[0]} [m^2] D_c {D_c} [m] R_c {R_c} [m] \n A_t: {A_t} [m^2] D_t {D_t} [m] Rt {R_t} [m] \n A_e: {A_e[0]} [m^2] D_e: {D_e} [m] R_e: {R_e} [m] \n L_c: {L_c} [m] \n L_e [m] {L_e[0]} \n mdot_chamber: {mdot_chamber[0]} [kg/s]')
+    
+    # Cooling Channel Geometry
+    circt = 2*np.pi*R_t # Circumference of the throat [m]
+    L = 2E-3
+    min_chan_land = 0.8E-3 # Minimum channel land [m] 0.8mm
+    min_chan_w = 1.5E-3 # Minimum channel width [m] 1.5mm ADJUST THIS VALUE TO ADJUST LAND WIDTH
+    
+
+    print(f"Circumfrence of throat: {circt} [m] with a maximum possible number of channels {(circt/L)}")
+
+    # Calculate channel dimensions for all of x
+
+
+    
     # Define chamber channel geometry  
-    # Loading geometry data into the engine channels classx
+    # Loading geometry data into the engine channels class
     #x_j = [-35.56, -34.29, -32.41, -30.48, -27.94, -25.4, -22.86, -20.32, -17.78, -15.24, -12.7, -10.16, -8.89, -7.62, -6.35, -5.08, -3.81, -3.048, -2.54, -1.27, 0, 2.54, 5.08, 7.62, 10.16, 12.7, 15.24, 17.78, 20.32, 24.71] # Array of x values from throat which will be used to calculate the channel geometry [m]
     # x_j_subtracted = [(x+35.56)/100 for x in x_j]
     # print(x_j_subtracted)
