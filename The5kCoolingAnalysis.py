@@ -16,7 +16,7 @@ from HydrogenModelV2 import para_fraction
 
 # Globals
 Ru = 8.31446261815324 # Univeral gas constant [J/mol*K]
-specificGasConstant = Ru/0.013551 # Specifc gas constant [J/Kmol] (named wrong but cant be arsed to change it)
+specificGasConstant = Ru/0.0275787914406925 # Specifc gas constant [J/Kmol] 
 
 # Function to create plots
 def create_plot(x_axis,y_axis, x_label, y_label, title):
@@ -1827,7 +1827,7 @@ def main():
     e = 2.5E-7 # Channel wall roughness of Narloy Z [m]
     k = 316  # Thermal conductivity of Narloy Z [W/m*K] 
     mdot_LH2 = 13.2 # kg/s mass flow rate of the LH2 in the coolant channels. 
-    meltingpoint = 1000 # Melting point of inconel Z [K]
+    meltingpoint = 600 # Melting point of aluminum [K]
     expRatio = 9 # Nozzle expansion ratio
     contChamber = 7 # Chamber contraction ratio
     L_star = 43 # L*
@@ -1844,9 +1844,9 @@ def main():
 
 
     # Define the molecules in the combustion gases and their molecular masses (Get this from CEA data)
-    combustion_molecules = {'H2' : [0.2517, 2.01588E-3], 'O2' : [0.0074,31.9988E-3], 'H2O' :[0.6724,18.01528E-3], 'OH' : [0.036,17.00734E-3], 'H' : [0.02829,1.00794E-3], 'O' : [0.004,15.9994E-3]} # Mole fractions of combustion gases from CEA data
-    
-     # Create gas object
+    combustion_molecules = {'CO' : [0.5643, 28.01E-3], 'CO2' : [0.16295,44.01E-3], 'H' :[1.4813E-3,1.00794E-3], 'HCO' : [4.7993E-5,29.0185E-3], 'H2' : [1.8196E-2,2.016E-3], 'H2O' : [2.3494E-1, 18.02E-3], 'O' : [1.295E-3, 16E-3], 'OH' : [1.5331E-2, 17.007E-3], 'O2' : [1.4587E-3,31.999E-3]} # Mole fractions of combustion gases from CEA data
+
+     # Create gas object for chamber estimates
     gas = ct.Solution('gri30.yaml')
 
 
@@ -1867,16 +1867,24 @@ def main():
     L_c = L_chamber + L_cone # Total chamber length
    
     # Plot rocket geometry and get x-axis and radius values
-    x, y = plot_bell_nozzle_rrs(R_t, expRatio, R_c, L_c, l_percent=80, theta_c_deg=20, theta_n_deg=30, theta_e_deg=12, r_conv_mult=1.75, r_throat_conv_mult=1.5, r_throat_div_mult=0.382, num_points=120)
-    
+    # plot_bell_nozzle_rrs(R_t, expRatio, R_c, L_c, l_percent=80, theta_c_deg=theta_c_deg, theta_n_deg=30, theta_e_deg=12, r_conv_mult=1.75, r_throat_conv_mult=1.5, r_throat_div_mult=0.382, num_points=120)
     print(f'Calculated Engine Geometry: \n A_c: {A_c[0]} [m^2] D_c {D_c} [m] R_c {R_c} [m] \n A_t: {A_t} [m^2] D_t {D_t} [m] Rt {R_t} [m] \n A_e: {A_e[0]} [m^2] D_e: {D_e} [m] R_e: {R_e} [m] \n L_c: {L_c} [m] \n L_e [m] {L_e[0]} \n mdot_chamber: {mdot_chamber[0]} [kg/s]')
     
+    # Cooling Channel Geometry
+    circt = 2*np.pi*R_t # Circumference of the throat [m]
+    L = 2E-3
+    min_chan_land = 0.8E-3 # Minimum channel land [m] 0.8mm
+    min_chan_w = 1.5E-3 # Minimum channel width [m] 1.5mm ADJUST THIS VALUE TO ADJUST LAND WIDTH
     
 
-    
+    print(f"Circumfrence of throat: {circt} [m] with a maximum possible number of channels {(circt/L)}")
 
+    # Calculate channel dimensions for all of x
+
+
+    
     # Define chamber channel geometry  
-    # Loading geometry data into the engine channels classx
+    # Loading geometry data into the engine channels class
     #x_j = [-35.56, -34.29, -32.41, -30.48, -27.94, -25.4, -22.86, -20.32, -17.78, -15.24, -12.7, -10.16, -8.89, -7.62, -6.35, -5.08, -3.81, -3.048, -2.54, -1.27, 0, 2.54, 5.08, 7.62, 10.16, 12.7, 15.24, 17.78, 20.32, 24.71] # Array of x values from throat which will be used to calculate the channel geometry [m]
     # x_j_subtracted = [(x+35.56)/100 for x in x_j]
     # print(x_j_subtracted)
@@ -1901,26 +1909,28 @@ def main():
     engine_info = EngineInfo(gam, C_star, M_c, P_c, T_c, Cp, F_Vac, Ncc, combustion_molecules, A_c[0], A_t[0], A_e[0], L_c, x_j, chan_land, chan_w, chan_h, chan_t, gas, mdot_LH2, e, k, mdot_chamber, RD, RU, R1, theta1, thetaD, thetaE)
     
     # Display the channel geometry
-    engine_info.displayChannelGeometry() # Display the engine channel geometry
+    # engine_info.displayChannelGeometry() # Display the engine channel geometry
     
     # Calculate flow data (calcualte flow data throughout entire engine at each x value (distance in m from injector) and step size in m)
-    # xi = 0 # Start of chamber [m]
-    # xf = 24.29*0.0254 #135.5 # End of chamber [m]
-    # dx = (24.29/1000)*0.0254 # Step size [m]
+    xi = 0 # Start of chamber [m]
+    xf = L_c + L_e[0]  # End of chamber [m]
+    dx = (xf/1000)# Step size [m]
+    print(f"dx: {dx}, xf: {xf}")
 
-    # array_length = int(xf/dx) # Length of the arrays to hold the flow data
+    array_length = int(xf/dx) # Length of the arrays to hold the flow data
+
     # Initial conditons for thermal analysis set F and Q to zero for isentropic condition.
-    # dF_dx = np.zeros(array_length)  # Thrust gradient array
-    # dQ_dx = np.zeros(array_length) # Heat transfer gradient 
+    dF_dx = np.zeros(array_length)  # Thrust gradient array
+    dQ_dx = np.zeros(array_length) # Heat transfer gradient 
     # Key data to pass to ODE solver
-    # keydata = [engine_info.A_c, engine_info.A_t, engine_info.A_e, engine_info.L_c, engine_info.gam, engine_info.Cp, dF_dx, dQ_dx] # Key data to pass to ODE solver
+    keydata = [engine_info.A_c, engine_info.A_t, engine_info.A_e, engine_info.L_c, engine_info.gam, engine_info.Cp, dF_dx, dQ_dx] # Key data to pass to ODE solver
 
-    # dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, engine_info.M_c, engine_info.P_c, engine_info.T_c, keydata) # returns pressure, temperature, mach number throughout  entire engine at each x value (distance in m from injector) and step size in m
+    dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, engine_info.M_c, engine_info.P_c, engine_info.T_c, keydata) # returns pressure, temperature, mach number throughout  entire engine at each x value (distance in m from injector) and step size in m
     
 
-    # create_plot([xp for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
-    # create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
-    # create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
+    create_plot([xp for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
+    create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
+    create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
 
     # xp_m = np.arange(xi, xf, dx)  # Create an array of x values from xi to xf with step size dx
 
