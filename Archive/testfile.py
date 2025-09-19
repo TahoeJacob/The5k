@@ -9,20 +9,33 @@ REFPROP_PATH = r"C:\Program Files (x86)\REFPROP"
 RP = REFPROPFunctionLibrary(os.path.join(REFPROP_PATH, "REFPRP64.dll"))
 RP.SETPATHdll(REFPROP_PATH)
 
-
 # Mole fractions
 z = [0.8, 0.15, 0.05]  # 65% n-Dodecane, 35% n-Decane
 
 # Example properties at 300 K, 101.325 kPa
-T = 288.7
-P = 0.101325E6
+T = 500
+P = 2E6
 
 result = RP.REFPROPdll("N-DODECANE*N-DECANE*CYCLOHEXANE", "TP", "D;H;S;VIS;TCX", RP.MASS_BASE_SI, 0, 0, T, P, z)
-print("Density [kg/m³]:", result.Output[0])
-print("Enthalpy [J/kg]:", result.Output[1])
-print("Entropy [J/kg-K]:", result.Output[2])
-print("Viscosity [Pa·s]:", result.Output[3])
-print("Thermal Conductivity [W/m-K]:", result.Output[4])
+density = result.Output[0]
+enthalpy = result.Output[1]
+entropy = result.Output[2]
+viscosity = result.Output[3]
+thermal_conductivity = result.Output[4]
+
+# Calculate Prandtl number: Pr = (viscosity * specific_heat) / thermal_conductivity
+# Specific heat (Cp) can be derived from enthalpy and temperature
+result_cp = RP.REFPROPdll("N-DODECANE*N-DECANE*CYCLOHEXANE", "TP", "CP", RP.MASS_BASE_SI, 0, 0, T, P, z)
+specific_heat = result_cp.Output[0]
+prandtl_number = (viscosity * specific_heat) / thermal_conductivity
+
+print("Density [kg/m³]:", density)
+print("Enthalpy [J/kg]:", enthalpy)
+print("Entropy [J/kg-K]:", entropy)
+print("Viscosity [Pa·s]:", viscosity)
+print("Thermal Conductivity [W/m-K]:", thermal_conductivity)
+print("Specific Heat [J/kg-K]:", specific_heat)
+print("Prandtl Number:", prandtl_number)
 
 # Function which defines derrivatives of ODEs 
 # def derivs(x, y):
@@ -188,42 +201,42 @@ print("Thermal Conductivity [W/m-K]:", result.Output[4])
     #++++++++++++++++++++++++++++++++++++++++++++
     # Upgraded code for getting correct values which takes into account peaks and instability in the answer. 
 
-    vale = np.arange(0.059, 0.08, 0.00001)
-    potential_sol = []
-    vale = [0.05961] 
-    # Initial loop which will be used to calculate first heat transfer data
-    for M_c_RS25 in vale:
-        # Assuming calc_flow_data function is defined elsewhere and returns the relevant values
-        dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, M_c_RS25, engine_info.P_c, engine_info.T_c, keydata)  # Corrected the function call with M_c_RS25
-        # Determine the largest delta
-        # Compute Mach from yp_m
-        mach = np.array([np.sqrt(yp[0]) for yp in yp_m])
-        peaks, _ = find_peaks(mach)  # tune prominence
-        # print("peaks", peaks, mach[peaks], val_diffs)
-        print(M_c_RS25)
+#     vale = np.arange(0.059, 0.08, 0.00001)
+#     potential_sol = []
+#     vale = [0.05961] 
+#     # Initial loop which will be used to calculate first heat transfer data
+#     for M_c_RS25 in vale:
+#         # Assuming calc_flow_data function is defined elsewhere and returns the relevant values
+#         dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, M_c_RS25, engine_info.P_c, engine_info.T_c, keydata)  # Corrected the function call with M_c_RS25
+#         # Determine the largest delta
+#         # Compute Mach from yp_m
+#         mach = np.array([np.sqrt(yp[0]) for yp in yp_m])
+#         peaks, _ = find_peaks(mach)  # tune prominence
+#         # print("peaks", peaks, mach[peaks], val_diffs)
+#         print(M_c_RS25)
 
-        if (np.sqrt(yp_m[np.argmax([t[0] for t in yp_m])][0]) > 2.0) :  # If the maximum Mach number is greater than 1
-            index = np.argmax([t[0] for t in yp_m])  # Extract the index of largest value from the yp_m tuple array
-            print("above Mach 1", M_c_RS25, index, "peaks:", mach[peaks], len(potential_sol))
-            if index > len(xp_m) - 30 and peaks.size == 0:  # Check if the index is within the last 30 values and no peaks
-                print(M_c_RS25, "POTENTIAL SOLUTION")
-                potential_sol.append(M_c_RS25)
+#         if (np.sqrt(yp_m[np.argmax([t[0] for t in yp_m])][0]) > 2.0) :  # If the maximum Mach number is greater than 1
+#             index = np.argmax([t[0] for t in yp_m])  # Extract the index of largest value from the yp_m tuple array
+#             print("above Mach 1", M_c_RS25, index, "peaks:", mach[peaks], len(potential_sol))
+#             if index > len(xp_m) - 30 and peaks.size == 0:  # Check if the index is within the last 30 values and no peaks
+#                 print(M_c_RS25, "POTENTIAL SOLUTION")
+#                 potential_sol.append(M_c_RS25)
     
-    print(potential_sol)
+#     print(potential_sol)
     
     
-    # Plot using display units (stretch y-axis)
-    fig, ax = plt.subplots(figsize=(9, 7))  # taller figure to stretch y
-    ax.plot(xp_m, mach, '-b', lw=2, label='Mach Number')
+#     # Plot using display units (stretch y-axis)
+#     fig, ax = plt.subplots(figsize=(9, 7))  # taller figure to stretch y
+#     ax.plot(xp_m, mach, '-b', lw=2, label='Mach Number')
 
-    # Reference
-    for peak in peaks:
-        ax.scatter([xp_m[peak]], [mach[peak]], c='k', s=25, zorder=5, label=f'Peak {peak}')
-        ax.axvline(0, color='k', lw=0.8, ls='--', alpha=0.6)
+#     # Reference
+#     for peak in peaks:
+#         ax.scatter([xp_m[peak]], [mach[peak]], c='k', s=25, zorder=5, label=f'Peak {peak}')
+#         ax.axvline(0, color='k', lw=0.8, ls='--', alpha=0.6)
 
-    # Let y stretch freely (avoid equal aspect squashing)
+#     # Let y stretch freely (avoid equal aspect squashing)
 
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper right', fontsize=8)
-    fig.tight_layout()
-main()
+#     ax.grid(True, alpha=0.3)
+#     ax.legend(loc='upper right', fontsize=8)
+#     fig.tight_layout()
+# main()

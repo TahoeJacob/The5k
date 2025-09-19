@@ -635,6 +635,7 @@ class RocketEngine:
 
         print(f"Final Time: {t:.2f} s, Final Velocity: {v:.2f} m/s, Final Altitude: {h:.2f} m, Final Mass: {m:.2f} kg")  # Print the final time, velocity, altitude, and mass
         # Display data
+        print(f"Engine propellant mass flow rate {(ox_mdot + fuel_mdot):.2f} kg/s, Oxidizer mass flow rate {ox_mdot:.2f} kg/s, Fuel mass flow rate {fuel_mdot:.2f} kg/s")  # Print the propellant mass flow rate
         print(f"Total wet mass of the rocket: {rocket_mass:0.2f} kg, Total dry mass: {recovery_mass + engine_mass + payload_mass + tank_mass} for O/F ratio of {target_of}")  # Print the total mass of the rocket
         print(f"Total oxidizer mass: {total_ox_mass:0.2f} kg \nTotal fuel mass: {total_fuel_mass:.2f} kg \nTank Length: {tank_length:.2f} m \nTank Mass: {tank_mass:.2f} kg \nEngine Mass: {engine_mass} kg \nPayload: {payload_mass} kg")  # Print the total oxidizer and fuel mass
         print(f"Estimated altitude reached: {h:.2f} m")  # Print the estimated altitude reached by the rocket
