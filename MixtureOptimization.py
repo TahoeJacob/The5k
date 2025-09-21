@@ -1407,7 +1407,7 @@ def calc_q_h2(dx, x, y, s, T_cw, T_LH2, P_LH2, engine_info):
 
     #fluidLosses = (2/(engine_info.calc_area(x)*engine_info.Ncc)+(engine_info.calc_area(x+dx)*engine_info.Ncc))*( (1/(rho_LH2*engine_info.calc_area(x)*engine_info.Ncc)) - (1/(rho_LH2*engine_info.calc_area(x+dx)*engine_info.Ncc)))# Calculate the fluid losses in the coolant channels
     
-    fluidLosses = (2/((chan_area*engine_info.Ncc) + (chan_area_next*engine_info.Ncc))) * engine_info.mdot_LH2 ** 2 * ((1/(rho_LH2*chan_area*engine_info.Ncc)) - (1/(rho_LH2*chan_area_next*engine_info.Ncc)))
+    fluidLosses = (2/((chan_area*engine_info.Ncc) + (chan_area_next*engine_info.Ncc))) * (engine_info.mdot_LH2/engine_info.Ncc) ** 2 * ((1/(rho_LH2*chan_area*engine_info.Ncc)) - (1/(rho_LH2*chan_area_next*engine_info.Ncc)))
     
     pressureLoss = minorLosses + majorLosses + fluidLosses # Calculate the total pressure loss in the coolant channels
     
@@ -1750,7 +1750,7 @@ def main():
     engine_info = EngineInfo(gam, C_star, M_c, P_c, T_c, Cp, F_Vac, Ncc, combustion_molecules, A_c[0], A_t[0], A_e[0], L_c[0], x_j, chan_land, chan_w, chan_h, chan_t, gas, mdot_LH2, e, k, mdot_chamber, RD, RU, R1, theta1, thetaD, thetaE)
     
     # Display the channel geometry
-    # engine_info.displayChannelGeometry() # Display the engine channel geometry
+    engine_info.displayChannelGeometry() # Display the engine channel geometry
     
    
     # Calculate flow data (calcualte flow data throughout entire engine at each x value (distance in m from injector) and step size in m)
