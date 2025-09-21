@@ -1833,15 +1833,20 @@ def main():
     # q_wall = calc_q_wall(dx, x, y, T_hw, T_cw, engine_info) # Calculate heat transfer through the wall
     iter = 0
     # print(f'q_gas {q_gas} [W] \n q_h2 = {q_h2} [W] \n q_wall = {q_wall} [W] \n at x = {x} [m] with T_hw = {T_hw} [K] with T_cw = {T_cw} [K] \n T_LH2_new = {T_LH2} [K] \n P_LH2_new = {P_LH2} [Pa] \n dF_dx_val = {dF_dx_val} [N/m]')
-    while T_cw_error > 10 and T_hw_error > 10: # Run until the error in the coolant temperature array and wall temperature array is less than 0.1 K
-
-        T_hw = T_hw_init # Initialize the hot wall temperature
-        T_cw = T_cw_init
-        T_LH2 = T_LH2_init # Initialize the liquid hydrogen temperature
-        P_LH2 = P_LH2_init
+    while T_cw_error > 1 and T_hw_error > 1: # Run until the error in the coolant temperature array and wall temperature array is less than 0.1 K
+        if iter == 0:
+            T_hw = T_hw_init # Initialize the hot wall temperature
+            T_cw = T_cw_init
+            T_LH2 = T_LH2_init # Initialize the liquid hydrogen temperature
+            P_LH2 = P_LH2_init
+        else:
+            T_hw = T_hw_array[0] # Initialize the hot wall temperature
+            T_cw = T_cw_array[0]
+            T_LH2 = T_LH2_array[0] # Initialize the liquid hydrogen temperature
+            P_LH2 = P_LH2_array[0]
         T_cw_array_prev = T_cw_array.copy() # Store the previous coolant temperature array
         T_hw_array_prev = T_hw_array.copy() # Store the previous wall temperature array
-
+        
         for i, (x,y) in enumerate(zip(reversed(xp_m), reversed(yp_m))):
             # Store the values for the current x value
             
@@ -1898,19 +1903,19 @@ def main():
         dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, engine_info.M_c, engine_info.P_c, engine_info.T_c, keydata) # returns pressure, temperature, mach number throughout  entire engine at each x value (distance in m from injector) and step size in m
         iter += 1
 
-    create_plot([x for x in xp_m], [T_LH2 for T_LH2 in reversed(T_LH2_array)], "Distance from Injector [m]", "T_LH2 [K]", "T_LH2 vs Distance from Injector")
-    create_plot([x for x in xp_m], [P_LH2 for P_LH2 in reversed(P_LH2_array)], "Distance from Injector [m]", "P_LH2 [Pa]", "P_LH2vs Distance from Injector")
-    create_plot([x for x in xp_m], [h_H2 for h_H2 in reversed(h_H2_array)], "Distance from Injector [m]", "T_cw [K]", "h_cold vs x Distance from Injector")
-    create_plot([x for x in xp_m], [therm_LH2 for therm_LH2 in reversed(therm_LH2_array)], "Distance from Injector [m]", "Thermal Conductivity [W/mK]", "Thermal Conductivity vs Distance from Injector")
+    # create_plot([x for x in xp_m], [T_LH2 for T_LH2 in reversed(T_LH2_array)], "Distance from Injector [m]", "T_LH2 [K]", "T_LH2 vs Distance from Injector")
+    # create_plot([x for x in xp_m], [P_LH2 for P_LH2 in reversed(P_LH2_array)], "Distance from Injector [m]", "P_LH2 [Pa]", "P_LH2vs Distance from Injector")
+    # create_plot([x for x in xp_m], [h_H2 for h_H2 in reversed(h_H2_array)], "Distance from Injector [m]", "T_cw [K]", "h_cold vs x Distance from Injector")
+    # create_plot([x for x in xp_m], [therm_LH2 for therm_LH2 in reversed(therm_LH2_array)], "Distance from Injector [m]", "Thermal Conductivity [W/mK]", "Thermal Conductivity vs Distance from Injector")
     # create_plot([x for x in xp_m], [A_gas for A_gas in reversed(A_gas_array)], "Distance from Injector [m]", "A_gas [m^2]", "A_gas vs Distance from Injector")
     # create_plot([x for x in xp_m], [R_hot for R_hot in reversed(R_hot_array)], "Distance from Injector [m]", "R_hot [W/m-K]", "R_hot vs Distance from Injector")
     # create_plot([x for x in xp_m], [areasurface for areasurface in reversed(areasurface_array)], "Distance from Injector [m]", "Surface Area [m^2]", "Surface Area vs Distance from Injector")
-    # create_plot([x for x in xp_m], [v for v in reversed(v_fluid_array)], "Distance from Injector [m]", "LH2 Channel Velocity [m/s]", "Fluid Velocity vs Distance from Injector")
+    create_plot([x for x in xp_m], [v for v in reversed(v_fluid_array)], "Distance from Injector [m]", "LH2 Channel Velocity [m/s]", "Fluid Velocity vs Distance from Injector")
     # create_plot([x for x in xp_m], [chan_area for chan_area in reversed(chan_area_array)], "Distance from Injector [m]", "Channel Area [m^2]", "Channel Area vs Distance from Injector")
-    # create_plot([x for x in xp_m], [Re for Re in reversed(ReynoldsNum_array)], "Distance from Injector [m]", "Reynolds Number", "Reynolds Number vs Distance from Injector")
-    create_plot([x for x in xp_m], [Nu for Nu in reversed(NusseltCold_array)], "Distance from Injector [m]", "Nusselt Number", "Nusselt Number vs Distance from Injector")
+    create_plot([x for x in xp_m], [Re for Re in reversed(ReynoldsNum_array)], "Distance from Injector [m]", "Reynolds Number", "Reynolds Number vs Distance from Injector")
+    # create_plot([x for x in xp_m], [Nu for Nu in reversed(NusseltCold_array)], "Distance from Injector [m]", "Nusselt Number", "Nusselt Number vs Distance from Injector")
     create_plot([x for x in xp_m], [Dh for Dh in reversed(Dh_array)], "Distance from Injector [m]", "Hydraulic Diameter [m]", "Hydraulic Diameter vs Distance from Injector")
-    # create_plot([x for x in xp_m], [rho_LH2 for rho_LH2 in reversed(rho_LH2_array)], "Distance from Injector [m]", "LH2 Density [kg/m^3]", "LH2 Density vs Distance from Injector")
+    create_plot([x for x in xp_m], [rho_LH2 for rho_LH2 in reversed(rho_LH2_array)], "Distance from Injector [m]", "LH2 Density [kg/m^3]", "LH2 Density vs Distance from Injector")
     # create_plot([x for x in xp_m], [C3 for C3 in reversed(C3_array)], "Distance from Injector [m]", "C3 [W/m^2K]", "C3 vs Distance from Injector")
     # Plot T_hw and T_cw on the same plot for comparison
     plt.figure()

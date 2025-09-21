@@ -1,6 +1,7 @@
 # Implement RK4 method for solving ODEs simultaneously 
 import numpy as np
 import matplotlib.pyplot as plt
+from CoolProp.CoolProp import PropsSI
 
 from ctREFPROP.ctREFPROP import REFPROPFunctionLibrary
 import os
@@ -10,13 +11,13 @@ RP = REFPROPFunctionLibrary(os.path.join(REFPROP_PATH, "REFPRP64.dll"))
 RP.SETPATHdll(REFPROP_PATH)
 
 # Mole fractions
-z = [0.8, 0.15, 0.05]  # 65% n-Dodecane, 35% n-Decane
+# z = [0.8, 0.15, 0.05]  # 65% n-Dodecane, 35% n-Decane
 
 # Example properties at 300 K, 101.325 kPa
-T = 500
-P = 2E6
+T_LH2 = 30
+P_LH2 = 2E6
 
-result = RP.REFPROPdll("N-DODECANE*N-DECANE*CYCLOHEXANE", "TP", "D;H;S;VIS;TCX", RP.MASS_BASE_SI, 0, 0, T, P, z)
+result = RP.REFPROPdll("H2", "TP", "D;H;S;VIS;TCX", RP.MASS_BASE_SI, 0, 0, T_LH2, P_LH2, [1.0])
 density = result.Output[0]
 enthalpy = result.Output[1]
 entropy = result.Output[2]
@@ -25,18 +26,47 @@ thermal_conductivity = result.Output[4]
 
 # Calculate Prandtl number: Pr = (viscosity * specific_heat) / thermal_conductivity
 # Specific heat (Cp) can be derived from enthalpy and temperature
-result_cp = RP.REFPROPdll("N-DODECANE*N-DECANE*CYCLOHEXANE", "TP", "CP", RP.MASS_BASE_SI, 0, 0, T, P, z)
+result_cp = RP.REFPROPdll("H2", "TP", "CP", RP.MASS_BASE_SI, 0, 0, T_LH2, P_LH2, [1.0])
 specific_heat = result_cp.Output[0]
 prandtl_number = (viscosity * specific_heat) / thermal_conductivity
 
-print("Density [kg/m³]:", density)
-print("Enthalpy [J/kg]:", enthalpy)
-print("Entropy [J/kg-K]:", entropy)
-print("Viscosity [Pa·s]:", viscosity)
-print("Thermal Conductivity [W/m-K]:", thermal_conductivity)
-print("Specific Heat [J/kg-K]:", specific_heat)
-print("Prandtl Number:", prandtl_number)
+# print("Density [kg/m³]:", density)
+# print("Enthalpy [J/kg]:", enthalpy)
+# print("Entropy [J/kg-K]:", entropy)
+# print("Viscosity [Pa·s]:", viscosity)
+# print("Thermal Conductivity [W/m-K]:", thermal_conductivity)
+# print("Specific Heat [J/kg-K]:", specific_heat)
+# print("Prandtl Number:", prandtl_number)
 
+
+fluid = "Hydrogen"
+
+
+rho_LH2 = PropsSI("D", "T", T_LH2, "P", P_LH2, fluid)                           # kg/m^3
+eta_LH2 = PropsSI("VISCOSITY", "T", T_LH2, "P", P_LH2, fluid)                 # Pa·s
+therm_LH2 = PropsSI("CONDUCTIVITY", "T", T_LH2, "P", P_LH2, fluid)   # W/m·K
+Cp = PropsSI("CPMASS", "T", T_LH2, "P", P_LH2, fluid)                           # J/kg·K
+Pr_LH2 = PropsSI("PRANDTL", "T", T_LH2, "P", P_LH2, fluid)                     # dimensionless
+h = PropsSI("H", "T", T_LH2, "P", P_LH2, fluid)/1000                             # J/kg Enthalpy [kJ/kg]
+
+# Calculate LH2 viscosity and thermal conductivity # [W/m*K] and [Pa*s]
+# therm_LH2, eta_LH2 = calc_liquid_hydrogen_transport_properties(T_LH2, P_LH2) # TESTED agains NIST and MINI-REFPROP PASSED @  38.9MPa 296K
+
+# paraPercent = para_fraction(T_LH2)/100
+
+# Calculate the density of LH2 @ T_f
+# h = [kJ/kg], rho = [kg/m^3], Cp = [J/g*K], Cv = [J/g*K]
+# h, rho_LH2, Cp, Cv = hydrogen_thermodynamics(P_LH2, 80, paraPercent, T_LH2) # Density [kg/m^3] # TESTED against NIST and MINI-REFPROP PASSED @  38.9MPa 296K
+print(f'PROPSI VALUES\nrho_LH2: {rho_LH2} [kg/m^3] : rho REFPROP {density}\n'
+        f'eta_LH2: {eta_LH2} [Pa*s] : eta REFPROP {viscosity}\n'
+        f'therm_LH2: {therm_LH2} [W/m*K] : therm REFPROP {thermal_conductivity}\n'
+        f'Cp: {Cp} [J/kg*K] : Cp REFPROP {specific_heat}\n'
+        f'Pr_LH2: {Pr_LH2} [Unitless] : Pr REFPROP {prandtl_number}\n'
+        f'T_LH2: {T_LH2} [K] \n'
+        f'P_LH2: {P_LH2} [Pa] \n')
+# Calcualte LH2 prandtl number
+Pr_LH2 = (eta_LH2 * Cp)/therm_LH2
+print(f'LH2 Prandtl Number: {Pr_LH2}')
 # Function which defines derrivatives of ODEs 
 # def derivs(x, y):
 #     # Inputs

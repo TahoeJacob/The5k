@@ -1021,7 +1021,7 @@ def calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info):
             C3 = (Re*((0.25*Dh)/(radius))**2 )** concavity
     else:
         C3 = 1
-    
+    C3 = 1
     # Calculate the Nusselt Number
     #rocket_correction = 2.7 # Test 
     Nu = ( (f/8)*Re*coolant_prandtl_number*(T_coolant/T_cw)**0.55)/( 1 + (f/8)**0.5 * (B - 8.48))  * C2 * C3 #* C1
@@ -1119,12 +1119,12 @@ def calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info):
     #fluidLosses = (2/(engine_info.calc_area(x)*engine_info.Ncc)+(engine_info.calc_area(x+dx)*engine_info.Ncc))*( (1/(rho_LH2*engine_info.calc_area(x)*engine_info.Ncc)) - (1/(rho_LH2*engine_info.calc_area(x+dx)*engine_info.Ncc)))# Calculate the fluid losses in the coolant channels
     
     fluidLosses = (2/((chan_area*engine_info.Ncc) + (chan_area_next*engine_info.Ncc))) * engine_info.mdot_coolant ** 2 * ((1/(coolant_density*chan_area*engine_info.Ncc)) - (1/(coolant_density*chan_area_next*engine_info.Ncc)))
-    
-    pressureLoss = minorLosses + majorLosses + fluidLosses # Calculate the total pressure loss in the coolant channels
-    
+
+    pressureLoss = minorLosses + majorLosses + abs(fluidLosses) # Calculate the total pressure loss in the coolant channels
+
     P_coolant_new = P_coolant - pressureLoss # Calculate the new pressure of the coolant channels
 
-    h_next = h + (q_h2/1000) / (engine_info.mdot_coolant/engine_info.Ncc) # Convert q_h2 to kJ/s and divide by mass flow rate to get enthalpy change [kJ/kg]
+    h_next = h + (q_h2) / (engine_info.mdot_coolant/engine_info.Ncc) # Convert q_h2 to kJ/s and divide by mass flow rate to get enthalpy change [kJ/kg]
 
     # Calculate deltaT based off enthalpy change
     result = RP.REFPROPdll("N-DODECANE*N-DECANE*CYCLOHEXANE", "HP", "T", RP.MASS_BASE_SI, 0, 0, h_next, P_coolant, z)
@@ -1136,12 +1136,12 @@ def calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info):
     dF_dx = (f*dx*v**2)/(2*Dh) # Calculate the frictional losses in the coolant channels
     
     # Debug Print
-    # print(f'Pressure Loss: {pressureLoss} [Pa] \n Major Losses: {majorLosses} [Pa] \n Minor Losses: {minorLosses} [Pa] \n Fluid Losses: {fluidLosses} [Pa] \n Dh: {Dh} [m] \n Dh_next: {Dh_next} [m] \n K: {K} [unitless] \n rho_LH2: {rho_LH2} [kg/m^3] \n v: {v} [m/s] \n eta_fin: {eta_fin} [unitless]')
-    # print(f'Temperature Change: {deltaT} [K] at x = {x} [m] with q_h2 = {q_h2} [W] and Cp = {Cp} [J/kg*K] and mdot_LH2 = {engine_info.mdot_LH2} [kg/s]')
+    print(f'Pressure Loss: {pressureLoss} [Pa] \n Major Losses: {majorLosses} [Pa] \n Minor Losses: {minorLosses} [Pa] \n Fluid Losses: {fluidLosses} [Pa] \n Dh: {Dh} [m] \n Dh_next: {Dh_next} [m] \n K: {K} [unitless] \n rho_coolant: {coolant_density} [kg/m^3] \n v: {v} [m/s]')
+    print(f'Temperature Change: {T_coolant-T_coolant_new} [K] at x = {x} [m] with q_h2 = {q_h2} [W] and Cp = {coolant_specific_heat} [J/kg*K] and mdot_LH2 = {engine_info.mdot_coolant} [kg/s]')
     # Debug Print
     # print(f'Calculated q_h2: {q_h2} [W] at x = {x} [m] with T_cw = {T_cw} [K] \n h_H2 = {h_H2} [W/m^2K] \n A_H2 = {A_H2} [m^2] \n T_LH2 = {T_LH2} [K] \n T_cw - T_LH2 = {T_cw - T_LH2} [K]')
 
-    return q_h2, T_coolant_new, P_coolant_new, dF_dx, h_H2, C3, v, coolant_density, chan_area, Re, Nu, Dh, coolant_thermal_conductivity
+    return q_h2, T_coolant_new, P_coolant_new, dF_dx, h_H2, C3, v, coolant_density, chan_area, Re, Nu, Dh, coolant_thermal_conductivity, pressureLoss, f,coolant_viscosity, minorLosses, majorLosses, fluidLosses
 
 # Function to calculate the heat transfer through the walls
 def calc_q_wall(dx, x, y, T_hw, T_cw, engine_info):
@@ -1360,7 +1360,7 @@ def newton_solve_temperatures(dx, x, y, s, T_LH2, P_LH2, engine_info,
     def F(T):
         T_hw, T_cw = T
         q_gas, heatflux, h_gas, A_gas, R_hot, areasurface = calc_q_gas(dx, x, y, T_hw, engine_info)
-        q_h2, T_LH2_new, P_LH2_new, dF_dx, h_H2, C3, v, rho_LH2, chan_area, Re, Nu, Dh, therm_LH2 = calc_q_h2(dx, x, y, s, T_cw, T_LH2, P_LH2, engine_info)
+        q_h2, T_LH2_new, P_LH2_new, dF_dx, h_H2, C3, v, rho_LH2, chan_area, Re, Nu, Dh, therm_LH2, pressureLoss, f, coolant_viscocity, minorLosses, majorLosses, fluidLosses = calc_q_h2(dx, x, y, s, T_cw, T_LH2, P_LH2, engine_info)
         q_wall = calc_q_wall(dx, x, y, T_hw, T_cw, engine_info)
 
         f1 = q_wall - q_gas
@@ -1588,7 +1588,7 @@ def main():
     Cp = 3.71330E3	 # Specific heat at constant pressure in [J/KgK] - CEA data
     F_Vac = 5200 # Vacuum thrust in [N] - CEA data
     M_c = 0.05959 # Injector mach number - calculated by trial and error, testfile.py has a good example of how to do this
-    Ncc = 50 #430.0 # Number of coolant channels - guessed 
+    Ncc = 60 #430.0 # Number of coolant channels - guessed 
     e = 1E-5 # Channel wall roughness of AlSi10Mg [m]
     k = 165  # Thermal conductivity of AlSi10Mg [W/m*K]  (https://www.protolabs.com/media/1022870/aluminium-uk-1.pdf) 
     mdot_coolant = 0.63 # kg/s mass flow rate of fuel through the coolant channels. 
@@ -1624,7 +1624,7 @@ def main():
 
 
     # Plot rocket geometry and get x-axis and radius values
-    plot_bell_nozzle_rrs(r_t, expRatio, r_c, L_c[0], l_percent=80, theta_c_deg=theta_c_deg, theta_n_deg=30, theta_e_deg=12, r_conv_mult=1.75, r_throat_conv_mult=1.5, r_throat_div_mult=0.382, num_points=120)
+    # plot_bell_nozzle_rrs(r_t, expRatio, r_c, L_c[0], l_percent=80, theta_c_deg=theta_c_deg, theta_n_deg=30, theta_e_deg=12, r_conv_mult=1.75, r_throat_conv_mult=1.5, r_throat_div_mult=0.382, num_points=120)
 
     print(f'Calculated Engine Geometry: \n A_c: {A_c[0]} [m^2] D_c {D_c} [m] R_c {r_c} [m] \n A_t: {A_t[0]} [m^2] D_t {D_t} [m] Rt {r_t} [m] \n A_e: {A_e[0]} [m^2] D_e: {D_e} [m] R_e: {r_e} [m] \n L_c: {L_c[0]} [m] \n L_e {L_e[0]} [m] \n Engine Length {L_c[0] + L_e[0]} [m] \n mdot_chamber: {mdot_chamber[0]} [kg/s]')
     
@@ -1639,13 +1639,12 @@ def main():
 
     # Cooling Channel Geometry
     circt = 2*np.pi*r_t # Circumference of the throat [m]
-    L = 2.5E-3
+    L = 2E-3
     min_chan_land = 0.8E-3 # Minimum channel land [m] 0.8mm
     min_chan_w = 1.5E-3 # Minimum channel width [m] 1.5mm ADJUST THIS VALUE TO ADJUST LAND WIDTH
     
 
     print(f"Circumfrence of throat: {circt} [m] with a maximum possible number of channels {(circt/L)}")
-
     # Calculate channel dimensions for all of x
     def calc_cooling_channel_geometry(r, chan_land, chan_w, Ncc, mode):
         # Calculate the cooling channel geometry at a given radius r [m]
@@ -1731,14 +1730,20 @@ def main():
     Dh_array = np.zeros(array_length+1) # Hydraulic diameter in the coolant channels [m]
     therm_coolant_array = np.zeros(array_length+1) # Thermal conductivity of liquid hydrogen in the coolant channels [W/mK]
     melting_point_array = np.full(array_length+1, meltingpoint)  # Melting point array [K]
+    pressureLoss_array = np.zeros(array_length+1) # Pressure loss in the coolant channels [Pa]
+    frictionfactor_array = np.zeros(array_length+1) # Friction factor in the coolant channels [dimensionless]
+    coolant_viscosity_array = np.zeros(array_length+1) # Coolant viscosity in the coolant channels [Pa.s]
+    minorLosses_array = np.zeros(array_length+1) # Minor losses in the coolant channels [Pa]
+    majorLosses_array = np.zeros(array_length+1) # Major losses in the coolant channels [Pa]
+    fluidLosses_array = np.zeros(array_length+1) # Fluid losses in the coolant channels [Pa]
     T_hw_matrix = [[]]
     # Initialize the first values of T_hw, T_cw, T_LH2, P_LH2
     s = dx # Initialize s, the distance along the coolant channel, to zero
 
     #---------------------------------------------------------------------------------------------
     # # FOR TESTING PURPOSES ONLY
-    # x = xp_m[-1]
-    # y = yp_m[-1]  # Get the last y value for the last x value
+    # x = xp_m[-40]
+    # y = yp_m[-40]  # Get the last y value for the last x value
     # T_hw = T_hw_init # Initialize the hot wall temperature
     # T_cw = T_cw_init # Initialize the coolant wall temperature
     # T_coolant = T_coolant_init # Initialize the liquid hydrogen temperature
@@ -1757,100 +1762,111 @@ def main():
     # print(f'After Newton Solve: T_hw = {T_hw} [K] T_cw = {T_cw} [K]')
     #---------------------------------------------------------------------------------------------
 
-    T_cw_error = 100 # Initialize the error in the coolant temperature array
-    T_hw_error = 100 # Initialize the error in the wall temperature array
+    T_cw_error = 200 # Initialize the error in the coolant temperature array
+    T_hw_error = 200 # Initialize the error in the wall temperature array
     # # q_gas, heatflux = calc_q_gas(dx, x, y, T_hw, engine_info) # Calculate heat transfer from gas to wall
     # # q_h2, T_LH2, P_LH2, dF_dx_val, h_h2 = calc_q_h2(dx, x, y, s, T_cw, T_LH2, P_LH2, engine_info) # Calculate heat transfer through coolant channels
     # # q_wall = calc_q_wall(dx, x, y, T_hw, T_cw, engine_info) # Calculate heat transfer through the wall
     iter = 0
     # # print(f'q_gas {q_gas} [W] \n q_h2 = {q_h2} [W] \n q_wall = {q_wall} [W] \n at x = {x} [m] with T_hw = {T_hw} [K] with T_cw = {T_cw} [K] \n T_LH2_new = {T_LH2} [K] \n P_LH2_new = {P_LH2} [Pa] \n dF_dx_val = {dF_dx_val} [N/m]')
-    while T_cw_error > 1 and T_hw_error > 1: # Run until the error in the coolant temperature array and wall temperature array is less than 0.1 K
+    # while T_cw_error > 140 and T_hw_error > 140: # Run until the error in the coolant temperature array and wall temperature array is less than 0.1 K
     # for i in range(3): # Run for a set number of iterations for now
-        if iter == 0:
-            T_hw = T_hw_init # Initialize the hot wall temperature
-            T_cw = T_cw_init
-            T_coolant = T_coolant_init # Initialize the liquid hydrogen temperature
-            P_coolant = P_coolant_init
-        else:
-            
-            T_hw = T_hw_array[-1] # Initialize the hot wall temperature
-            T_cw = T_cw_array[-1] # Initialize the coolant wall temperature
-            T_coolant = T_coolant_array[-1] # Initialize the liquid hydrogen temperature
-            P_coolant = P_coolant_array[-1] # Initialize the liquid hydrogen pressure
+    T_hw = T_hw_init # Initialize the hot wall temperature
+    T_cw = T_cw_init
+    T_coolant = T_coolant_init # Initialize the liquid hydrogen temperature
+    P_coolant = P_coolant_init
+        # else:
+        #     break
+        #     T_hw = T_hw_array[-1] # Initialize the hot wall temperature
+        #     T_cw = T_cw_array[-1] # Initialize the coolant wall temperature
+        #     T_coolant = T_coolant_array[-1] # Initialize the liquid hydrogen temperature
+        #     P_coolant = P_coolant_array[-1] # Initialize the liquid hydrogen pressure
 
-        print(T_coolant, P_coolant, T_coolant_init, P_coolant_init)
+        # T_cw_array_prev = T_cw_array.copy() # Store the previous coolant temperature array
+        # T_hw_array_prev = T_hw_array.copy() # Store the previous wall temperature array
 
-        T_cw_array_prev = T_cw_array.copy() # Store the previous coolant temperature array
-        T_hw_array_prev = T_hw_array.copy() # Store the previous wall temperature array
-
-        for i, (x, y) in enumerate(zip(reversed(xp_m), reversed(yp_m))):
-        # Store the values for the current x value
-            
-            # Run the thermal analysis for current x value, run until q_gas, q_h2, and q_wall have converged by adjusting T_hw, T_cw
-            T = newton_solve_temperatures(dx, x, y, s, T_coolant, P_coolant, engine_info, T_hw, T_cw, tol=0.1, max_iter=50)
-
-            # Unpack the new temperatures
-            T_hw, T_cw = T
-            
-
-            # Calculate Heat Transfer Information based off convergence values, overwrite T_LH2 and P_LH2 with new values
-            q_gas,heatflux, h_gas, A_gas, R_hot, areasurface = calc_q_gas(dx, x, y, T_hw, engine_info)
-            q_h2, T_coolant, P_coolant, dF_dx_val, h_H2,C3,v, rho_LH2, chan_area, Re, Nu, Dh, therm_LH2 = calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info) # Calculate heat transfer through coolant channels
-            q_wall = calc_q_wall(dx, x, y, T_hw, T_cw, engine_info) # Calculate heat transfer through the wall
-            
-            # Calculate dF_dx and dQ_dx based on the heat transfer through the coolant channels
-            dQ_dx[i] = dQ_dx[-1] + (q_gas/mdot_chamber)
-            dF_dx[i] = dF_dx_val
-            s+=dx
-            
-
-            T_coolant_array[i] = T_coolant
-            T_hw_array[i] = T_hw
-            T_cw_array[i] = T_cw
-            P_coolant_array[i] = P_coolant
-            heatflux_hotside[i] = heatflux # Store the heat flux on the hot side of the wall [W/m^2]
-            v_fluid_array[i] = v # Store the fluid velocity in the coolant channels [m/s]
-            q_h2_array[i] = q_h2 # Store the heat transfer through coolant channels [W]
-            h_coolant_array[i] = h_H2 # Store the heat transfer coefficient for liquid hydrogen in [W/m^2K]
-            C3_array[i] = C3 # Store the heat transfer coefficient for liquid hydrogen in [W/m^2K]
-            q_gas_array[i] = q_gas # Store the heat transfer from gas to wall [W]
-            h_gas_array[i] = h_gas # Store the heat transfer coefficient for gas in [W/m^2K]
-            rho_coolant_array[i] = rho_LH2 # Store the density of liquid hydrogen in [kg/m^3]
-            chan_area_array[i] = chan_area # Store the channel area in the coolant channels [m^2]
-            ReynoldsNum_array[i] = Re # Store the Reynolds number in the coolant channels [dimensionless]
-            NusseltCold_array[i] = Nu # Store the Nusselt number in the coolant channels [dimensionless]
-            A_gas_array[i] = A_gas # Store the gas area in the coolant channels [m^2]
-            R_hot_array[i] = R_hot # Store the hot side radius in the coolant channels [m]
-            areasurface_array[i] = areasurface # Store the surface area in the coolant channels [m^2]
-            Dh_array[i] = Dh # Store the hydraulic diameter in the coolant channels [m]
-            therm_coolant_array[i] = therm_LH2 # Store the thermal conductivity of liquid hydrogen in the coolant channels [W/mK]
-            # print(f'q_gas: {q_gas} [W] \n q_h2 = {q_h2} [W] \n q_wall = {q_wall} [W] \n at x = {x} [m] with T_hw = {T_hw} [K] with T_cw = {T_cw} [K] \n T_LH2_new = {T_LH2} [K] \n P_LH2_new = {P_LH2} [Pa] \n T_LH2_new = {T_LH2 - T_LH2_array[-1] } [K] \n P_LH2_new = {P_LH2_array[-1] - P_LH2} [Pa] \n dF_dx = {dF_dx[i]} [N/m] \n dQ_dx = {dQ_dx[i]} [W-s/kg] \n')
-            # Re-run the flow data calculate with updated dF_dx and dQ_dx values
-
-        for b in range(len(T_cw_array)):
-            error_T_cw_array[b] = T_cw_array[b] - T_cw_array_prev[b] # Calculate the error in the coolant temperature array
-            error_T_hw_array[b] = T_hw_array[b] - T_hw_array_prev[b] # Calculate the error in the wall temperature array
-        T_cw_error = np.mean(np.abs(error_T_cw_array)) # Calculate the mean error in the coolant temperature array
-        T_hw_error = np.mean(np.abs(error_T_hw_array)) # Calculate the mean error in the wall temperature array
+    for i, (x, y) in enumerate(zip(reversed(xp_m), reversed(yp_m))):
+    # Store the values for the current x value
         
-        print(f'Iteration {iter+1} complete, T_cw error: {np.mean(np.abs(error_T_cw_array))} [K], T_hw error: {np.mean(np.abs(error_T_hw_array))} [K]') # Print the error in the coolant and wall temperatures
-        keydata = [engine_info.A_c, engine_info.A_t, engine_info.A_e, engine_info.L_c, engine_info.gam, engine_info.Cp, dF_dx, dQ_dx] # Key data to pass to ODE solver
-        dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, engine_info.M_c, engine_info.P_c, engine_info.T_c, keydata) # returns pressure, temperature, mach number throughout  entire engine at each x value (distance in m from injector) and step size in m
-        iter += 1
+        # Run the thermal analysis for current x value, run until q_gas, q_h2, and q_wall have converged by adjusting T_hw, T_cw
+        T = newton_solve_temperatures(dx, x, y, s, T_coolant, P_coolant, engine_info, T_hw, T_cw, tol=0.1, max_iter=50)
 
-    create_plot([x for x in xp_m], [T_coolant for T_coolant in reversed(T_coolant_array)], "Distance from Injector [m]", "T_LH2 [K]", "T_LH2 vs Distance from Injector")
-    create_plot([x for x in xp_m], [P_coolant for P_coolant in reversed(P_coolant_array)], "Distance from Injector [m]", "P_LH2 [Pa]", "P_LH2vs Distance from Injector")
-    create_plot([x for x in xp_m], [h_coolant for h_coolant in reversed(h_coolant_array)], "Distance from Injector [m]", "T_cw [K]", "h_cold vs x Distance from Injector")
-    create_plot([x for x in xp_m], [therm_coolant for therm_coolant in reversed(therm_coolant_array)], "Distance from Injector [m]", "Thermal Conductivity [W/mK]", "Thermal Conductivity vs Distance from Injector")
+        # Unpack the new temperatures
+        T_hw, T_cw = T
+        
+
+        # Calculate Heat Transfer Information based off convergence values, overwrite T_LH2 and P_LH2 with new values
+        q_gas,heatflux, h_gas, A_gas, R_hot, areasurface = calc_q_gas(dx, x, y, T_hw, engine_info)
+        q_h2, T_coolant, P_coolant, dF_dx_val, h_H2,C3,v, rho_LH2, chan_area, Re, Nu, Dh, therm_LH2, pressureLoss, f, coolant_viscosity,  minorLosses, majorLosses, fluidLosses = calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info) # Calculate heat transfer through coolant channels
+        q_wall = calc_q_wall(dx, x, y, T_hw, T_cw, engine_info) # Calculate heat transfer through the wall
+        
+        # Calculate dF_dx and dQ_dx based on the heat transfer through the coolant channels
+        dQ_dx[i] = dQ_dx[-1] + (q_gas/mdot_chamber)
+        dF_dx[i] = dF_dx_val
+        s+=dx
+        
+
+        T_coolant_array[i] = T_coolant
+        T_hw_array[i] = T_hw
+        T_cw_array[i] = T_cw
+        P_coolant_array[i] = P_coolant
+        heatflux_hotside[i] = heatflux # Store the heat flux on the hot side of the wall [W/m^2]
+        v_fluid_array[i] = v # Store the fluid velocity in the coolant channels [m/s]
+        q_h2_array[i] = q_h2 # Store the heat transfer through coolant channels [W]
+        h_coolant_array[i] = h_H2 # Store the heat transfer coefficient for liquid hydrogen in [W/m^2K]
+        C3_array[i] = C3 # Store the heat transfer coefficient for liquid hydrogen in [W/m^2K]
+        q_gas_array[i] = q_gas # Store the heat transfer from gas to wall [W]
+        h_gas_array[i] = h_gas # Store the heat transfer coefficient for gas in [W/m^2K]
+        rho_coolant_array[i] = rho_LH2 # Store the density of liquid hydrogen in [kg/m^3]
+        chan_area_array[i] = chan_area # Store the channel area in the coolant channels [m^2]
+        ReynoldsNum_array[i] = Re # Store the Reynolds number in the coolant channels [dimensionless]
+        NusseltCold_array[i] = Nu # Store the Nusselt number in the coolant channels [dimensionless]
+        A_gas_array[i] = A_gas # Store the gas area in the coolant channels [m^2]
+        R_hot_array[i] = R_hot # Store the hot side radius in the coolant channels [m]
+        areasurface_array[i] = areasurface # Store the surface area in the coolant channels [m^2]
+        Dh_array[i] = Dh # Store the hydraulic diameter in the coolant channels [m]
+        therm_coolant_array[i] = therm_LH2 # Store the thermal conductivity of liquid hydrogen in the coolant channels [W/mK]
+        pressureLoss_array[i] = pressureLoss # Store the pressure loss in the coolant channels [Pa]
+        frictionfactor_array[i] = f # Store the friction factor in the coolant channels [dimensionless]
+        coolant_viscosity_array[i] = coolant_viscosity # Store the coolant viscosity in the coolant channels [Pa.s]
+        minorLosses_array[i] = minorLosses # Store the minor losses in the coolant channels [Pa]
+        majorLosses_array[i] = majorLosses # Store the major losses in the coolant
+        fluidLosses_array[i] = fluidLosses # Store the fluid losses in the coolant channels [Pa]
+        # print(f'q_gas: {q_gas} [W] \n q_h2 = {q_h2} [W] \n q_wall = {q_wall} [W] \n at x = {x} [m] with T_hw = {T_hw} [K] with T_cw = {T_cw} [K] \n T_LH2_new = {T_LH2} [K] \n P_LH2_new = {P_LH2} [Pa] \n T_LH2_new = {T_LH2 - T_LH2_array[-1] } [K] \n P_LH2_new = {P_LH2_array[-1] - P_LH2} [Pa] \n dF_dx = {dF_dx[i]} [N/m] \n dQ_dx = {dQ_dx[i]} [W-s/kg] \n')
+        # Re-run the flow data calculate with updated dF_dx and dQ_dx values
+
+    for b in range(len(T_cw_array)):
+        error_T_cw_array[b] = T_cw_array[b] - T_cw_array_prev[b] # Calculate the error in the coolant temperature array
+        error_T_hw_array[b] = T_hw_array[b] - T_hw_array_prev[b] # Calculate the error in the wall temperature array
+    T_cw_error = np.mean(np.abs(error_T_cw_array)) # Calculate the mean error in the coolant temperature array
+    T_hw_error = np.mean(np.abs(error_T_hw_array)) # Calculate the mean error in the wall temperature array
+    
+    print(f'Iteration {iter+1} complete, T_cw error: {np.mean(np.abs(error_T_cw_array))} [K], T_hw error: {np.mean(np.abs(error_T_hw_array))} [K]') # Print the error in the coolant and wall temperatures
+    keydata = [engine_info.A_c, engine_info.A_t, engine_info.A_e, engine_info.L_c, engine_info.gam, engine_info.Cp, dF_dx, dQ_dx] # Key data to pass to ODE solver
+    dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, engine_info.M_c, engine_info.P_c, engine_info.T_c, keydata) # returns pressure, temperature, mach number throughout  entire engine at each x value (distance in m from injector) and step size in m
+    iter += 1
+
+    # Print: mdot_total, Ncc, A_plotted[i], v[i], rho[i]. Compute: mdot_reconstructed = rho[i] * v[i] * A_plotted[i] * Ncc If mdot_reconstructed << mdot_total, you are not using the correct area in velocity (or double counting Ncc somewhere).
+    print(f"Coolant mass flow rate: {engine_info.mdot_coolant} [kg/s] with a reconstructed mass flow rate of {np.mean(rho_coolant_array*v_fluid_array*chan_area_array*engine_info.Ncc)} [kg/s]") # Print the coolant mass flow rate and the reconstructed mass flow rate
+    create_plot([x for x in xp_m], [T_coolant for T_coolant in reversed(T_coolant_array)], "Distance from Injector [m]", "T_Coolant [K]", "T_LH2 vs Distance from Injector")
+    create_plot([x for x in xp_m], [P_coolant for P_coolant in reversed(P_coolant_array)], "Distance from Injector [m]", "P_Coolant [Pa]", "P_LH2vs Distance from Injector")
+    # create_plot([x for x in xp_m], [h_coolant for h_coolant in reversed(h_coolant_array)], "Distance from Injector [m]", "Coolant Enthalpy [J/kg]", "h_cold vs x Distance from Injector")
+    create_plot([x for x in xp_m], [visc for visc in reversed(coolant_viscosity_array)], "Distance from Injector [m]", "Coolant Viscosity [Pa.s]", "Coolant Viscosity vs Distance from Injector")
+    create_plot([x for x in xp_m], [pressureLoss for pressureLoss in reversed(pressureLoss_array)], "Distance from Injector [m]", "Pressure Loss [Pa]", "Pressure Loss vs Distance from Injector")
+    create_plot([x for x in xp_m], [f for f in reversed(frictionfactor_array)], "Distance from Injector [m]", "Friction Factor", "Friction Factor vs Distance from Injector")
+    create_plot([x for x in xp_m], [minorLosses for minorLosses in reversed(minorLosses_array)], "Distance from Injector [m]", "Minor Losses [Pa]", "Minor Losses vs Distance from Injector")
+    create_plot([x for x in xp_m], [majorLosses for majorLosses in reversed(majorLosses_array)], "Distance from Injector [m]", "Major Losses [Pa]", "Major Losses vs Distance from Injector")
+    create_plot([x for x in xp_m], [fluidLosses for fluidLosses in reversed(fluidLosses_array)], "Distance from Injector [m]", "Fluid Losses [Pa]", "Fluid Losses vs Distance from Injector")
+    # create_plot([x for x in xp_m], [therm_coolant for therm_coolant in reversed(therm_coolant_array)], "Distance from Injector [m]", "Thermal Conductivity [W/mK]", "Thermal Conductivity vs Distance from Injector")
     # create_plot([x for x in xp_m], [A_gas for A_gas in reversed(A_gas_array)], "Distance from Injector [m]", "A_gas [m^2]", "A_gas vs Distance from Injector")
     # create_plot([x for x in xp_m], [R_hot for R_hot in reversed(R_hot_array)], "Distance from Injector [m]", "R_hot [W/m-K]", "R_hot vs Distance from Injector")
     # create_plot([x for x in xp_m], [areasurface for areasurface in reversed(areasurface_array)], "Distance from Injector [m]", "Surface Area [m^2]", "Surface Area vs Distance from Injector")
-    # create_plot([x for x in xp_m], [v for v in reversed(v_fluid_array)], "Distance from Injector [m]", "LH2 Channel Velocity [m/s]", "Fluid Velocity vs Distance from Injector")
-    # create_plot([x for x in xp_m], [chan_area for chan_area in reversed(chan_area_array)], "Distance from Injector [m]", "Channel Area [m^2]", "Channel Area vs Distance from Injector")
-    # create_plot([x for x in xp_m], [Re for Re in reversed(ReynoldsNum_array)], "Distance from Injector [m]", "Reynolds Number", "Reynolds Number vs Distance from Injector")
-    create_plot([x for x in xp_m], [Nu for Nu in reversed(NusseltCold_array)], "Distance from Injector [m]", "Nusselt Number", "Nusselt Number vs Distance from Injector")
+    create_plot([x for x in xp_m], [v for v in reversed(v_fluid_array)], "Distance from Injector [m]", "Coolant Channel Velocity [m/s]", "Fluid Velocity vs Distance from Injector")
+    create_plot([x for x in xp_m], [chan_area for chan_area in reversed(chan_area_array)], "Distance from Injector [m]", "Channel Area [m^2]", "Channel Area vs Distance from Injector")
+    create_plot([x for x in xp_m], [Re for Re in ReynoldsNum_array], "Distance from Injector [m]", "Reynolds Number", "Reynolds Number vs Distance from Injector")
+    # create_plot([x for x in xp_m], [Nu for Nu in reversed(NusseltCold_array)], "Distance from Injector [m]", "Nusselt Number", "Nusselt Number vs Distance from Injector")
     create_plot([x for x in xp_m], [Dh for Dh in reversed(Dh_array)], "Distance from Injector [m]", "Hydraulic Diameter [m]", "Hydraulic Diameter vs Distance from Injector")
-    # create_plot([x for x in xp_m], [rho_LH2 for rho_LH2 in reversed(rho_LH2_array)], "Distance from Injector [m]", "LH2 Density [kg/m^3]", "LH2 Density vs Distance from Injector")
+    create_plot([x for x in xp_m], [rho_coolant for rho_coolant in reversed(rho_coolant_array)], "Distance from Injector [m]", "Coolant Density [kg/m^3]", "Coolant Density vs Distance from Injector")
     # create_plot([x for x in xp_m], [C3 for C3 in reversed(C3_array)], "Distance from Injector [m]", "C3 [W/m^2K]", "C3 vs Distance from Injector")
     # Plot T_hw and T_cw on the same plot for comparison
     plt.figure()
@@ -1862,13 +1878,13 @@ def main():
     plt.title("T_hw and T_cw vs Distance from Injector")
     plt.legend()
     plt.grid(True)
-    create_plot([x for x in xp_m], [qflux_hot for qflux_hot in reversed(heatflux_hotside)], "Distance from Injector [m]", "heatflux [w/m^2]", "heatflux vs Distance from Injector")
+    # create_plot([x for x in xp_m], [qflux_hot for qflux_hot in reversed(heatflux_hotside)], "Distance from Injector [m]", "heatflux [w/m^2]", "heatflux vs Distance from Injector")
     # create_plot([x for x in xp_m], [q_LH2 for q_LH2 in reversed(q_h2_array)], "Distance from Injector [m]", "q_h2 [W]", "q_h2 vs Distance from Injector")
-    create_plot([xp for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
-    create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
-    create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
+    # create_plot([xp for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
+    # create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
+    # create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
     # create_plot([x for x in xp_m], [q_gas for q_gas in reversed(q_gas_array)], "Distance from Injector [m]", "q_gas [W]", "q_gas vs Distance from Injector")
-    create_plot([x for x in xp_m], [h_gas for h_gas in reversed(h_gas_array)], "Distance from Injector [m]", "h_gas [W/m^2K]", "h_gas vs Distance from Injector")
+    # create_plot([x for x in xp_m], [h_gas for h_gas in reversed(h_gas_array)], "Distance from Injector [m]", "h_gas [W/m^2K]", "h_gas vs Distance from Injector")
 
     print("Thermal analysis complete.")
     print('-' * 50)
@@ -1877,7 +1893,7 @@ def main():
     # Print peak heat flux on hot side in engineering notation (e.g., 1.23E+5)
     print(f'Peak heatflux on hot side: {max(heatflux_hotside):.4E} W/m^2')
     print(f'Peak hot wall heat transfer coefficient: {max(h_gas_array):.2f} W/m^2K')
-    print(f'Delta P: {P_coolant_array[0] - P_coolant_array[-1]:.2E} Pa')
+    print(f'Delta P: {P_coolant_array[0] - P_coolant_array[-1]:.2E} Pa Start Pressure {P_coolant_array[0]:.2E} Pa End Pressure {P_coolant_array[-1]:.2E} Pa')
     print(f'Delta T: {T_coolant_array[-1] - T_coolant_array[0]:.2f} K')
     
         
