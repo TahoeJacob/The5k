@@ -12,7 +12,7 @@ import re
 g = 9.81 # Gravity in m/s/s^2 (sea level)
 c = 295 # Speed of sound in air at sea level in m/s (approximate, varies with temperature and pressure)
 Ru = 8.31446261815324 # Univeral gas constant [J/mol*K]
-specificGasConstant = Ru/0.013551 # Specifc gas constant [J/Kmol] (named wrong but cant be arsed to change it)
+specificGasConstant = Ru/0.0275787914406925 # Specifc gas constant [J/Kmol] (named wrong but cant be arsed to change it)
 
 
 class RocketEngine:
@@ -715,7 +715,7 @@ def The5k():
     rocketMass = 90.0 # Estimated mass of the rocket in kg
     desired_engine_thrust = 5000 # Estimated thrust sea level  [N]
     Pc = 20 # Chamber presssure in bar (desired)
-    fuel_stroage_density = 795.6  # Density of RP-1 in kg/m^3 (approximate)
+    fuel_stroage_density = 810 #795.6  # Density of RP-1 in kg/m^3 (approximate)
     ox_storage_density = 1140.0  # Density of LOX in kg/m^3 (approximate)
     burn_time = 23  # Estimated burn time in seconds
     expansion_ratio = 69  # No fixed expansion ratio for the 5k engine yet... 

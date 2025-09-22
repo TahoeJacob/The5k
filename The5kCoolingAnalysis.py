@@ -1025,7 +1025,7 @@ def calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info):
     # Calculate the Nusselt Number
     #rocket_correction = 2.7 # Test 
     Nu = ( (f/8)*Re*coolant_prandtl_number*(T_coolant/T_cw)**0.55)/( 1 + (f/8)**0.5 * (B - 8.48))  * C2 * C3 #* C1
-    
+    Nu = 0.021*Re**(0.8)*coolant_prandtl_number**(0.4)*(0.64+0.36*(T_coolant/T_cw)) # Kerosene Nusselt number from RPA
     # Calculate h_H2 the heat transfer coefficient for the cooling channels
     h_H2 = (Nu * coolant_thermal_conductivity)/Dh # [W/m^2K]
 
@@ -1589,7 +1589,7 @@ def main():
     F_Vac = 5200 # Vacuum thrust in [N] - CEA data
     M_c = 0.05959 # Injector mach number - calculated by trial and error, testfile.py has a good example of how to do this
     Ncc = 60 #430.0 # Number of coolant channels - guessed 
-    e = 1E-5 # Channel wall roughness of AlSi10Mg [m]
+    e = 6E-4 # Channel wall roughness of AlSi10Mg [m]
     k = 165  # Thermal conductivity of AlSi10Mg [W/m*K]  (https://www.protolabs.com/media/1022870/aluminium-uk-1.pdf) 
     mdot_coolant = 0.63 # kg/s mass flow rate of fuel through the coolant channels. 
     meltingpoint = 600 # Melting point of aluminum [K]
@@ -1679,7 +1679,7 @@ def main():
 
     engine_info.displayChannelGeometry() # Display the engine channel geometry
     
-   
+    plt.show()
     # Initial conditons for thermal analysis set F and Q to zero for isentropic condition.
     dF_dx = np.zeros(array_length+1)  # Thrust gradient array
     dQ_dx = np.zeros(array_length+1) # Heat transfer gradient 
@@ -1843,25 +1843,26 @@ def main():
         iter += 1
 
     # Print: mdot_total, Ncc, A_plotted[i], v[i], rho[i]. Compute: mdot_reconstructed = rho[i] * v[i] * A_plotted[i] * Ncc If mdot_reconstructed << mdot_total, you are not using the correct area in velocity (or double counting Ncc somewhere).
-    create_plot([x for x in xp_m], [T_coolant for T_coolant in reversed(T_coolant_array)], "Distance from Injector [m]", "T_Coolant [K]", "T_LH2 vs Distance from Injector")
-    create_plot([x for x in xp_m], [P_coolant for P_coolant in reversed(P_coolant_array)], "Distance from Injector [m]", "P_Coolant [Pa]", "P_LH2vs Distance from Injector")
+    create_plot([x for x in xp_m], [T_coolant for T_coolant in reversed(T_coolant_array)], "Distance from Injector [m]", "T_Coolant [K]", "T_coolant vs Distance from Injector")
+    create_plot([x for x in xp_m], [P_coolant for P_coolant in reversed(P_coolant_array)], "Distance from Injector [m]", "P_Coolant [Pa]", "P_coolant vs Distance from Injector")
     # create_plot([x for x in xp_m], [h_coolant for h_coolant in reversed(h_coolant_array)], "Distance from Injector [m]", "Coolant Enthalpy [J/kg]", "h_cold vs x Distance from Injector")
-    create_plot([x for x in xp_m], [visc for visc in reversed(coolant_viscosity_array)], "Distance from Injector [m]", "Coolant Viscosity [Pa.s]", "Coolant Viscosity vs Distance from Injector")
-    create_plot([x for x in xp_m], [pressureLoss for pressureLoss in reversed(pressureLoss_array)], "Distance from Injector [m]", "Pressure Loss [Pa]", "Pressure Loss vs Distance from Injector")
-    create_plot([x for x in xp_m], [f for f in reversed(frictionfactor_array)], "Distance from Injector [m]", "Friction Factor", "Friction Factor vs Distance from Injector")
-    create_plot([x for x in xp_m], [minorLosses for minorLosses in reversed(minorLosses_array)], "Distance from Injector [m]", "Minor Losses [Pa]", "Minor Losses vs Distance from Injector")
-    create_plot([x for x in xp_m], [majorLosses for majorLosses in reversed(majorLosses_array)], "Distance from Injector [m]", "Major Losses [Pa]", "Major Losses vs Distance from Injector")
-    create_plot([x for x in xp_m], [fluidLosses for fluidLosses in reversed(fluidLosses_array)], "Distance from Injector [m]", "Fluid Losses [Pa]", "Fluid Losses vs Distance from Injector")
+    # create_plot([x for x in xp_m], [visc for visc in reversed(coolant_viscosity_array)], "Distance from Injector [m]", "Coolant Viscosity [Pa.s]", "Coolant Viscosity vs Distance from Injector")
+    # create_plot([x for x in xp_m], [pressureLoss for pressureLoss in reversed(pressureLoss_array)], "Distance from Injector [m]", "Pressure Loss [Pa]", "Pressure Loss vs Distance from Injector")
+    # create_plot([x for x in xp_m], [f for f in reversed(frictionfactor_array)], "Distance from Injector [m]", "Friction Factor", "Friction Factor vs Distance from Injector")
+    # create_plot([x for x in xp_m], [minorLosses for minorLosses in reversed(minorLosses_array)], "Distance from Injector [m]", "Minor Losses [Pa]", "Minor Losses vs Distance from Injector")
+    # create_plot([x for x in xp_m], [majorLosses for majorLosses in reversed(majorLosses_array)], "Distance from Injector [m]", "Major Losses [Pa]", "Major Losses vs Distance from Injector")
+    # create_plot([x for x in xp_m], [fluidLosses for fluidLosses in reversed(fluidLosses_array)], "Distance from Injector [m]", "Fluid Losses [Pa]", "Fluid Losses vs Distance from Injector")
     # create_plot([x for x in xp_m], [therm_coolant for therm_coolant in reversed(therm_coolant_array)], "Distance from Injector [m]", "Thermal Conductivity [W/mK]", "Thermal Conductivity vs Distance from Injector")
     # create_plot([x for x in xp_m], [A_gas for A_gas in reversed(A_gas_array)], "Distance from Injector [m]", "A_gas [m^2]", "A_gas vs Distance from Injector")
     # create_plot([x for x in xp_m], [R_hot for R_hot in reversed(R_hot_array)], "Distance from Injector [m]", "R_hot [W/m-K]", "R_hot vs Distance from Injector")
     # create_plot([x for x in xp_m], [areasurface for areasurface in reversed(areasurface_array)], "Distance from Injector [m]", "Surface Area [m^2]", "Surface Area vs Distance from Injector")
-    create_plot([x for x in xp_m], [v for v in reversed(v_fluid_array)], "Distance from Injector [m]", "Coolant Channel Velocity [m/s]", "Fluid Velocity vs Distance from Injector")
-    create_plot([x for x in xp_m], [chan_area for chan_area in reversed(chan_area_array)], "Distance from Injector [m]", "Channel Area [m^2]", "Channel Area vs Distance from Injector")
-    create_plot([x for x in xp_m], [Re for Re in reversed(ReynoldsNum_array)], "Distance from Injector [m]", "Reynolds Number", "Reynolds Number vs Distance from Injector")
+    # create_plot([x for x in xp_m], [v for v in reversed(v_fluid_array)], "Distance from Injector [m]", "Coolant Channel Velocity [m/s]", "Fluid Velocity vs Distance from Injector")
+    # create_plot([x for x in xp_m], [chan_area for chan_area in reversed(chan_area_array)], "Distance from Injector [m]", "Channel Area [m^2]", "Channel Area vs Distance from Injector")
+    # create_plot([x for x in xp_m], [Re for Re in reversed(ReynoldsNum_array)], "Distance from Injector [m]", "Reynolds Number", "Reynolds Number vs Distance from Injector")
     # create_plot([x for x in xp_m], [Nu for Nu in reversed(NusseltCold_array)], "Distance from Injector [m]", "Nusselt Number", "Nusselt Number vs Distance from Injector")
-    create_plot([x for x in xp_m], [Dh for Dh in reversed(Dh_array)], "Distance from Injector [m]", "Hydraulic Diameter [m]", "Hydraulic Diameter vs Distance from Injector")
+    # create_plot([x for x in xp_m], [Dh for Dh in reversed(Dh_array)], "Distance from Injector [m]", "Hydraulic Diameter [m]", "Hydraulic Diameter vs Distance from Injector")
     create_plot([x for x in xp_m], [rho_coolant for rho_coolant in reversed(rho_coolant_array)], "Distance from Injector [m]", "Coolant Density [kg/m^3]", "Coolant Density vs Distance from Injector")
+    create_plot([T_cw for T_cw in reversed(T_cw_array)], [rho_coolant for rho_coolant in reversed(rho_coolant_array)], "T_cw [K]", "Coolant Density [kg/m^3]", "T_cw vs Coolant Density")
     # create_plot([x for x in xp_m], [C3 for C3 in reversed(C3_array)], "Distance from Injector [m]", "C3 [W/m^2K]", "C3 vs Distance from Injector")
     # Plot T_hw and T_cw on the same plot for comparison
     plt.figure()
