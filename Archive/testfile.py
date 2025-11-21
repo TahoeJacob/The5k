@@ -14,10 +14,10 @@ RP.SETPATHdll(REFPROP_PATH)
 # z = [0.8, 0.15, 0.05]  # 65% n-Dodecane, 35% n-Decane
 
 # Example properties at 300 K, 101.325 kPa
-T_LH2 = 30
-P_LH2 = 2E6
+T_LH2 = 100
+P_LH2 = 4E6
 
-result = RP.REFPROPdll("H2", "TP", "D;H;S;VIS;TCX", RP.MASS_BASE_SI, 0, 0, T_LH2, P_LH2, [1.0])
+result = RP.REFPROPdll("OXYGEN", "TP", "D;H;S;VIS;TCX", RP.MASS_BASE_SI, 0, 0, T_LH2, P_LH2, [1.0])
 density = result.Output[0]
 enthalpy = result.Output[1]
 entropy = result.Output[2]
@@ -26,7 +26,7 @@ thermal_conductivity = result.Output[4]
 
 # Calculate Prandtl number: Pr = (viscosity * specific_heat) / thermal_conductivity
 # Specific heat (Cp) can be derived from enthalpy and temperature
-result_cp = RP.REFPROPdll("H2", "TP", "CP", RP.MASS_BASE_SI, 0, 0, T_LH2, P_LH2, [1.0])
+result_cp = RP.REFPROPdll("OXYGEN", "TP", "CP", RP.MASS_BASE_SI, 0, 0, T_LH2, P_LH2, [1.0])
 specific_heat = result_cp.Output[0]
 prandtl_number = (viscosity * specific_heat) / thermal_conductivity
 
@@ -39,7 +39,7 @@ prandtl_number = (viscosity * specific_heat) / thermal_conductivity
 # print("Prandtl Number:", prandtl_number)
 
 
-fluid = "Hydrogen"
+fluid = "OXYGEN"
 
 
 rho_LH2 = PropsSI("D", "T", T_LH2, "P", P_LH2, fluid)                           # kg/m^3

@@ -936,20 +936,30 @@ def calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info):
     # Get the viscosity of LH2 @ T 
 
     # Mole fractions
-    z = [0.8, 0.15, 0.05]  # 65% n-Dodecane, 35% n-Decane
+    z = [1.0]  # 100% Oxygen
 
-    result = RP.REFPROPdll("N-DODECANE*N-DECANE*CYCLOHEXANE", "TP", "D;H;S;VIS;TCX", RP.MASS_BASE_SI, 0, 0, T_coolant, P_coolant, z)
+    result = RP.REFPROPdll("OXYGEN", "TP", "D;H;S;VIS;TCX", RP.MASS_BASE_SI, 0, 0, T_coolant, P_coolant, z)
     coolant_density = result.Output[0]
     h = result.Output[1]
     coolant_entropy = result.Output[2]
     coolant_viscosity = result.Output[3]
     coolant_thermal_conductivity = result.Output[4]
-
+    print("COOLANT DENSITY kg/m^3: ", coolant_density)
     # Calculate Prandtl number: Pr = (viscosity * specific_heat) / thermal_conductivity
     # Specific heat (Cp) can be derived from enthalpy and temperature
-    Cp = RP.REFPROPdll("N-DODECANE*N-DECANE*CYCLOHEXANE", "TP", "CP", RP.MASS_BASE_SI, 0, 0, T_coolant, P_coolant, z)
+    Cp = RP.REFPROPdll("OXYGEN", "TP", "CP", RP.MASS_BASE_SI, 0, 0, T_coolant, P_coolant, z)
     coolant_specific_heat = Cp.Output[0]
     coolant_prandtl_number = (coolant_viscosity * coolant_specific_heat) / coolant_thermal_conductivity
+
+    # Print all the properties to check values
+    print(f"\nCoolant Properties at T={T_coolant:.2f}K, P={P_coolant:.2E}Pa:")
+    print(f"Density: {coolant_density:.4f} kg/m³")
+    print(f"Enthalpy: {h:.2f} J/kg")
+    print(f"Entropy: {coolant_entropy:.4f} J/kg·K")
+    print(f"Viscosity: {coolant_viscosity:.6E} Pa·s")
+    print(f"Thermal Conductivity: {coolant_thermal_conductivity:.6f} W/m·K")
+    print(f"Specific Heat (Cp): {coolant_specific_heat:.2f} J/kg·K")
+    print(f"Prandtl Number: {coolant_prandtl_number:.6f}")
     # fluid = "Hydrogen"
 
     # # Get properties
@@ -1009,6 +1019,7 @@ def calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info):
 
     # Calculate C2 coefficient
     C2 = 1 + (s/Dh)**(-0.7) * (T_cw/T_coolant)**(0.1)
+
     # Calculate C3 Eqtn 6.1.14 
     radius, radiusType = engine_info.get_r_value(x)
 
@@ -1024,8 +1035,11 @@ def calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info):
         C3 = 1
     # C3 = 1
     # Calculate the Nusselt Number
-    Nu = ( (f/8)*Re*coolant_prandtl_number*(T_coolant/T_cw)**0.55)/( 1 + (f/8)**0.5 * (B - 8.48)) *C1 * C2 #* C3 
+    # Nu = ( (f/8)*Re*coolant_prandtl_number*(T_coolant/T_cw)**0.55)/( 1 + (f/8)**0.5 * (B - 8.48)) *C1 * C2 #* C3 # LH2 Nusselt Number 
     # Nu = 0.021*Re**(0.8)*coolant_prandtl_number**(0.4)*(0.64+0.36*(T_coolant/T_cw)) # Kerosene Nusselt number from RPA
+    # Nu = 0.0023*(Re**0.8)*(coolant_prandtl_number**0.4) # For other liquidds
+    Nu = 0.0185*(Re**0.8)*(coolant_prandtl_number**0.4)*(T_coolant/T_cw)**0.1 # For Methane
+    
     # Calculate h_H2 the heat transfer coefficient for the cooling channels
     h_H2 = (Nu * coolant_thermal_conductivity)/Dh # [W/m^2K]
 
@@ -1127,7 +1141,7 @@ def calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info):
     h_next = h + (q_h2) / (engine_info.mdot_coolant/engine_info.Ncc) # Convert q_h2 to kJ/s and divide by mass flow rate to get enthalpy change [kJ/kg]
 
     # Calculate deltaT based off enthalpy change
-    result = RP.REFPROPdll("N-DODECANE*N-DECANE*CYCLOHEXANE", "HP", "T", RP.MASS_BASE_SI, 0, 0, h_next, P_coolant, z)
+    result = RP.REFPROPdll("OXYGEN", "HP", "T", RP.MASS_BASE_SI, 0, 0, h_next, P_coolant, z)
     T_coolant_new = result.Output[0]
 
     # T_coolant_new = PropsSI("T", "H", h_next*1000, "P", P_LH2_new, fluid) # Convert h_next to J/kg and get new temperature [K] using NIST REFPROP
@@ -1582,7 +1596,7 @@ def main():
     # theta_c_deg = 30 # nozzle contraction half angle
 
 
-    # Constraints 5kN Engine LOX/RP1
+    # Constants 5kN Enginer LOX/RP1
     gam = 1.168 # Specific heat ratio  - CEA data
     C_star = 1784 # Characteristic velocity in [m/s] - CEA data
     P_c = 2E6 # Chamber stagnation pressure in [Pa] - CEA data
@@ -1591,9 +1605,9 @@ def main():
     F_Vac = 5342.21 # Vacuum thrust in [N] - CEA data
     M_c = 0.05959 # Injector mach number - calculated by trial and error, testfile.py has a good example of how to do this
     Ncc = 68 #430.0 # Number of coolant channels - guessed 
-    e = 6.5E-4 # Channel wall roughness of AlSi10Mg [m]
+    e = 6.5E-5 # Channel wall roughness of AlSi10Mg [m]
     k = 165  # Thermal conductivity of AlSi10Mg [W/m*K]  (https://www.protolabs.com/media/1022870/aluminium-uk-1.pdf) 
-    mdot_coolant = 0.57 # kg/s mass flow rate of fuel through the coolant channels. 
+    mdot_coolant = 1.13 # kg/s mass flow rate of fuel through the coolant channels. 
     meltingpoint = 273.15+300 # Melting point of aluminum [K]
     expRatio = 12 # Nozzle expansion ratio
     contChamber = 10 # Chamber contraction ratio
@@ -1637,8 +1651,8 @@ def main():
     msp.add_lwpolyline(points, dxfattribs={'layer': 'NOZZLE_CONTOUR'})
 
     # Save to file
-    doc.saveas("nozzle_contour.dxf")
-    print("DXF saved as nozzle_contour.dxf")
+    # doc.saveas("nozzle_contour.dxf")
+    # print("DXF saved as nozzle_contour.dxf")
 
     print(f'Calculated Engine Geometry: \n A_c: {A_c[0]} [m^2] D_c {D_c} [m] R_c {r_c} [m] \n A_t: {A_t[0]} [m^2] D_t {D_t} [m] Rt {r_t} [m] \n A_e: {A_e[0]} [m^2] D_e: {D_e} [m] R_e: {r_e} [m] \n L_c: {L_c[0]} [m] \n L_e {L_e[0]} [m] \n Engine Length {L_c[0] + L_e[0]} [m] \n mdot_chamber: {mdot_chamber[0]} [kg/s]')
     
@@ -1712,8 +1726,8 @@ def main():
     # Define start conditions for thermal analysis
     T_hw_init = 500.0 # Wall temperature at the injector [K] - This is a guess, can be changed later
     T_cw_init = 300.0 # Coolant temperature at the injector [K] - This is a guess, can be changed later
-    T_coolant_init = 273.15+15 # Coolant temperature in Kelvin at inlet of coolant channel
-    P_coolant_init = 3.5E6 #38.93E6 # Coolant pressure in Pascals at inlet of coolant channel
+    T_coolant_init =  80 #273.15+15 # Coolant temperature in Kelvin at inlet of coolant channel
+    P_coolant_init = 4.0E6 #38.93E6 # Coolant pressure in Pascals at inlet of coolant channel
     #----------------------------------------------------------------------------------------------
     
 #     # Initialize arrays with initial conditions for thermal analysis
@@ -1888,11 +1902,11 @@ def main():
     plt.legend()
     plt.grid(True)
     create_plot([x for x in xp_m], [qflux_hot for qflux_hot in reversed(heatflux_hotside)], "Distance from Injector [m]", "heatflux [w/m^2]", "heatflux vs Distance from Injector")
-    create_plot([x for x in xp_m], [q_coolant for q_coolant in reversed(q_coolant_array)], "Distance from Injector [m]", "Coolant Heat Transfer [W/m^2]", "q_coolant vs Distance from Injector")
-    create_plot([xp for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
-    create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
-    create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
-    create_plot([x for x in xp_m], [q_gas for q_gas in reversed(q_gas_array)], "Distance from Injector [m]", "q_gas [W/cm^2/K]", "q_gas vs Distance from Injector")
+    create_plot([x for x in xp_m], [q_coolant for q_coolant in reversed(q_coolant_array)], "Distance from Injector [m]", "Coolant Heat Transfer [W]", "q_coolant vs Distance from Injector")
+    # create_plot([xp for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
+    # create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
+    # create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
+    # create_plot([x for x in xp_m], [q_gas for q_gas in reversed(q_gas_array)], "Distance from Injector [m]", "q_gas [W]", "q_gas vs Distance from Injector")
     # create_plot([x for x in xp_m], [h_gas for h_gas in reversed(h_gas_array)], "Distance from Injector [m]", "h_gas [W/m^2K]", "h_gas vs Distance from Injector")
 
     print("Thermal analysis complete.")
