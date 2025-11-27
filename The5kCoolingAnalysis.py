@@ -1625,18 +1625,69 @@ def main():
     r_e = D_e/2 # Calculate exit radius [m]
 
 
-    # Plot rocket geometry and get x-axis and radius values
-    x_axis, y_axis = plot_bell_nozzle_rrs(r_t, expRatio, r_c, L_c[0], l_percent=80, theta_c_deg=theta_c_deg, theta_n_deg=30, theta_e_deg=12, r_conv_mult=1.75, r_throat_conv_mult=1.5, r_throat_div_mult=0.382, num_points=120)
+    # Plot rocket geometry
+    x_axis, y_axis = plot_bell_nozzle_rrs(
+        r_t,
+        expRatio,
+        r_c,
+        L_c[0],
+        l_percent=80,
+        theta_c_deg=theta_c_deg,
+        theta_n_deg=30,
+        theta_e_deg=12,
+        r_conv_mult=1.75,
+        r_throat_conv_mult=1.5,
+        r_throat_div_mult=0.382,
+        num_points=120,
+    )
 
-    # Export curve as .dxf for onshape
+    # Build continuous segments (lines + splines) for DXF export
+    prof = compute_rrs_profile(
+        r_t,
+        r_c,
+        A_e[0],
+        A_t[0],
+        L_c[0],
+        l_percent=80,
+        theta_c_deg=theta_c_deg,
+        theta_n_deg=30,
+        theta_e_deg=12,
+        r_conv_mult=1.75,
+        r_throat_conv_mult=1.5,
+        r_throat_div_mult=0.382,
+    )
+
+    def radius_at(x_val: float) -> float:
+        return float(calc_radius(x_val, A_c[0], A_t[0], A_e[0], L_c[0]))
+
+    def sample_curve(x0: float, x1: float, samples: int = 40):
+        xs = np.linspace(x0, x1, samples)
+        ys = calc_radius(xs, A_c[0], A_t[0], A_e[0], L_c[0])
+        return list(zip(xs.tolist(), ys.tolist()))
+
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
 
-    # Add polyline with curve points
-    points = list(zip(x_axis, y_axis))
-    msp.add_lwpolyline(points, dxfattribs={'layer': 'NOZZLE_CONTOUR'})
+    segments = [
+        ("line", 0.0, prof["xP2"]),
+        ("spline", prof["xP2"], prof["xP3"]),
+        ("line", prof["xP3"], prof["xP4"]),
+        ("spline", prof["xP4"], prof["x_throat"]),
+        ("spline", prof["x_throat"], prof["xN"]),
+        ("spline", prof["xN"], prof["xExit"]),
+    ]
 
-    # Save to file
+    for kind, x0, x1 in segments:
+        if x1 - x0 <= 1e-6:
+            continue
+        if kind == "line":
+            p_start = (x0, radius_at(x0))
+            p_end = (x1, radius_at(x1))
+            msp.add_line(p_start, p_end, dxfattribs={"layer": "NOZZLE_CONTOUR"})
+        else:
+            curve_pts = sample_curve(x0, x1)
+            msp.add_spline(fit_points=curve_pts, dxfattribs={"layer": "NOZZLE_CONTOUR"})
+
     doc.saveas("nozzle_contour.dxf")
     print("DXF saved as nozzle_contour.dxf")
 
@@ -1651,20 +1702,14 @@ def main():
     array_length = int(xf/dx) # Length of the arrays to hold the flow data
     x_array = np.linspace(xi, xf, array_length) # Array of x values from injector [m]
 
-    # Cooling Channel Geometry
-    circt = 2*np.pi*r_t # Circumference of the throat [m]
-    L = 2E-3
-    min_chan_land = 0.8E-3 # Minimum channel land [m] 0.8mm
-    min_chan_w = 1.5E-3 # Minimum channel width [m] 1.5mm ADJUST THIS VALUE TO ADJUST LAND WIDTH
     
-
-    print(f"Circumfrence of throat: {circt} [m] with a maximum possible number of channels {(circt/L)}")
     # Calculate channel dimensions for all of x
-    def calc_cooling_channel_geometry(r, chan_land, chan_w, Ncc, mode):
+    def calc_cooling_channel_geometry(r, chan_land, chan_w, min_width, Ncc, mode):
         # Calculate the cooling channel geometry at a given radius r [m]
         # r = radius at the current x location [m]
         # chan_land = channel land [m]
         # chan_width = channel width [m]
+        # min_width = minimum channel width [m]
         # Ncc = number of coolant channels
         # mode = 'constland' or 'constwidth' to determine if the channel land or channel width is constant
 
@@ -1673,21 +1718,39 @@ def main():
         width_per_channel = circumference/Ncc # Width per channel [m]
         if mode == 'constland':
             chan_w = width_per_channel - chan_land # Channel width [m]
+            if chan_w < min_width:
+                chan_w = min_width
         elif mode == 'constwidth':
             chan_land = width_per_channel - chan_w # Channel land [m]
+            if chan_land < min_chan_land:
+                chan_land = min_chan_land
         return chan_land, chan_w
     chan_land = []
     chan_w = []
-    chan_h = np.full(len(x_array), 2E-3) # Channel height [m]
-    chan_t = np.full(len(x_array), 0.889E-3) # Channel thickness [m]
+    throat_index = int(np.argmin(np.abs(x_array - L_c[0])))
+    chan_t = np.full(len(x_array), 0.899e-3, dtype=float)
+    chan_h = np.full(len(x_array), 2E-3, dtype=float) # Channel height [m]
+
+    if throat_index < len(x_array):
+        chan_t[throat_index:] = np.linspace(0.899e-3, 1.5e-3, len(x_array) - throat_index)
+        chan_h[throat_index:] = np.linspace(2E-3, 3.5E-3, len(x_array) - throat_index)
 
     for x in x_array:
         r = calc_radius(x, A_c[0], A_t[0], A_e[0], L_c[0]) # Calculate radius at current x location [m]
-        land, width = calc_cooling_channel_geometry(r, 1.6E-3, 1E-3, Ncc, 'constland') # Calculate channel dimensions at current x location [m]
+        land, width = calc_cooling_channel_geometry(r, 1.6E-3, 1E-3, 0.8E-3, Ncc, 'constland') # Calculate channel dimensions at current x location [m]
         chan_land.append(land) # Append channel land to list [m]
         chan_w.append(width) # Append channel width to list [m]        
         
     # Create an instance of the EngineInfo class to store all engine information in a single object NOTE: All values are in SI units
+    
+    # Cooling Channel Geometry
+    circt = 2*np.pi*r_t # Circumference of the throat [m]
+    min_chan_land = np.min(chan_land) # Minimum channel land [m] 0.8mm
+    min_chan_w = np.min(chan_w) # Minimum channel width [m] 1.5mm ADJUST THIS VALUE TO ADJUST LAND WIDTH
+    L = min_chan_land + min_chan_w # Minimum overall channel width [m]
+
+    print(f"Circumfrence of throat: {circt} [m] with a maximum possible number of channels {(circt/L)}, length of channel land: {min_chan_land} [m], length of channel width: {min_chan_w} [m], overall channel width: {L} [m]")
+
 
     engine_info = EngineInfo(gam, C_star, M_c, P_c, T_c, Cp, F_Vac, Ncc, combustion_molecules, A_c[0], A_t[0], A_e[0], r_t, r_c, L_c[0], x_array, chan_land, chan_w, chan_h, chan_t, gas, mdot_coolant, e, k, mdot_chamber, RD, RU, R1, theta1, thetaD, thetaE)
 
@@ -1879,11 +1942,11 @@ def main():
     # create_plot([x for x in xp_m], [C3 for C3 in reversed(C3_array)], "Distance from Injector [m]", "C3 [W/m^2K]", "C3 vs Distance from Injector")
     # Plot T_hw and T_cw on the same plot for comparison
     plt.figure()
-    plt.plot([x for x in xp_m], [T_cw-273.15 for T_cw in reversed(T_cw_array)], label="T_cw [K]")
-    plt.plot([x for x in xp_m], [T_hw-273.15 for T_hw in reversed(T_hw_array)], label="T_hw [K]")
-    plt.plot([x for x in xp_m], [meltingpoint-273.15 for meltingpoint in reversed(melting_point_array)], label="Melting Point [K]", linestyle='--', color='red')
+    plt.plot([x for x in xp_m], [T_cw-273.15 for T_cw in reversed(T_cw_array)], label="T_cw [C]")
+    plt.plot([x for x in xp_m], [T_hw-273.15 for T_hw in reversed(T_hw_array)], label="T_hw [C]")
+    plt.plot([x for x in xp_m], [meltingpoint-273.15 for meltingpoint in reversed(melting_point_array)], label="Melting Point [C]", linestyle='--', color='red')
     plt.xlabel("Distance from Injector [m]")
-    plt.ylabel("Temperature [K]")
+    plt.ylabel("Temperature [C]")
     plt.title("T_hw and T_cw vs Distance from Injector")
     plt.legend()
     plt.grid(True)
