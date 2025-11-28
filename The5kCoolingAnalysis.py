@@ -1118,7 +1118,7 @@ def calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info):
 
     #fluidLosses = (2/(engine_info.calc_area(x)*engine_info.Ncc)+(engine_info.calc_area(x+dx)*engine_info.Ncc))*( (1/(rho_LH2*engine_info.calc_area(x)*engine_info.Ncc)) - (1/(rho_LH2*engine_info.calc_area(x+dx)*engine_info.Ncc)))# Calculate the fluid losses in the coolant channels
     
-    fluidLosses = (2/((chan_area*engine_info.Ncc) + (chan_area_next*engine_info.Ncc)))  * ((1/(coolant_density*chan_area*engine_info.Ncc)) - (1/(coolant_density*chan_area_next*engine_info.Ncc))) * (engine_info.mdot_coolant) ** 2
+    fluidLosses = (2/((chan_area*engine_info.Ncc) + (chan_area_next*engine_info.Ncc)))  * abs((1/(coolant_density*chan_area*engine_info.Ncc)) - (1/(coolant_density*chan_area_next*engine_info.Ncc))) * (engine_info.mdot_coolant) ** 2
 
     pressureLoss = minorLosses + majorLosses + fluidLosses # Calculate the total pressure loss in the coolant channels
 
@@ -1752,6 +1752,37 @@ def main():
     print(f"Circumfrence of throat: {circt} [m] with a maximum possible number of channels {(circt/L)}, length of channel land: {min_chan_land} [m], length of channel width: {min_chan_w} [m], overall channel width: {L} [m]")
 
 
+
+    # Print out dimensions for selected x locations
+    x_locs = [0, 60.426/1000, 79.972/1000, 145.223/1000, 161.137/1000, 164.861/1000, 296.635/1000, 321.635/1000] # x locations in meters
+    x_names =['StartChamber', 'EndChamber', 'StartContraction', 'EndContraction', 'StartThroatFillet', 'EndThroatFillet', 'StartNozzleBell', 'EndNozzleBell']
+    header_fmt = "{:<20} {:>15} {:>15} {:>18} {:>18} {:>18} {:>20}"
+    row_fmt = "{:<20} {:>15.6f} {:>15.6f} {:>18.6f} {:>18.6f} {:>18.6f} {:>20.6f}"
+
+    print(header_fmt.format(
+        "location name",
+        "x location [m]",
+        "Radius [m]",
+        "Channel Land [m]",
+        "Channel Width [m]",
+        "Channel Height [m]",
+        "Channel Thickness [m]",
+    ))
+
+    for x_loc, x_name in zip(x_locs, x_names):
+        index = (np.abs(x_array - x_loc)).argmin()
+        r = calc_radius(x_array[index], A_c[0], A_t[0], A_e[0], L_c[0])
+        print(row_fmt.format(
+            x_name,
+            x_array[index],
+            r,
+            chan_land[index],
+            chan_w[index],
+            chan_h[index],
+            chan_t[index],
+        ))
+
+     # Create an instance of the EngineInfo class to store all engine information in a single object NOTE: All values are in SI units
     engine_info = EngineInfo(gam, C_star, M_c, P_c, T_c, Cp, F_Vac, Ncc, combustion_molecules, A_c[0], A_t[0], A_e[0], r_t, r_c, L_c[0], x_array, chan_land, chan_w, chan_h, chan_t, gas, mdot_coolant, e, k, mdot_chamber, RD, RU, R1, theta1, thetaD, thetaE)
 
     engine_info.displayChannelGeometry() # Display the engine channel geometry
@@ -1937,7 +1968,7 @@ def main():
     # create_plot([x for x in xp_m], [Re for Re in reversed(ReynoldsNum_array)], "Distance from Injector [m]", "Reynolds Number", "Reynolds Number vs Distance from Injector")
     # create_plot([x for x in xp_m], [Nu for Nu in reversed(NusseltCold_array)], "Distance from Injector [m]", "Nusselt Number", "Nusselt Number vs Distance from Injector")
     # create_plot([x for x in xp_m], [Dh for Dh in reversed(Dh_array)], "Distance from Injector [m]", "Hydraulic Diameter [m]", "Hydraulic Diameter vs Distance from Injector")
-    create_plot([x for x in xp_m], [rho_coolant for rho_coolant in reversed(rho_coolant_array)], "Distance from Injector [m]", "Coolant Density [kg/m^3]", "Coolant Density vs Distance from Injector")
+    # create_plot([x for x in xp_m], [rho_coolant for rho_coolant in reversed(rho_coolant_array)], "Distance from Injector [m]", "Coolant Density [kg/m^3]", "Coolant Density vs Distance from Injector")
     # create_plot([T_cw for T_cw in reversed(T_cw_array)], [rho_coolant for rho_coolant in reversed(rho_coolant_array)], "T_cw [K]", "Coolant Density [kg/m^3]", "T_cw vs Coolant Density")
     # create_plot([x for x in xp_m], [C3 for C3 in reversed(C3_array)], "Distance from Injector [m]", "C3 [W/m^2K]", "C3 vs Distance from Injector")
     # Plot T_hw and T_cw on the same plot for comparison
