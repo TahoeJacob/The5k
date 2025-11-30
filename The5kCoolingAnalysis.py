@@ -1024,8 +1024,10 @@ def calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info):
         C3 = 1
     # C3 = 1
     # Calculate the Nusselt Number
-    Nu = ( (f/8)*Re*coolant_prandtl_number*(T_coolant/T_cw)**0.55)/( 1 + (f/8)**0.5 * (B - 8.48)) *C1 * C2 #* C3 
+    # Nu = ( (f/8)*Re*coolant_prandtl_number*(T_coolant/T_cw)**0.55)/( 1 + (f/8)**0.5 * (B - 8.48)) *C1 * C2 #* C3 
     # Nu = 0.021*Re**(0.8)*coolant_prandtl_number**(0.4)*(0.64+0.36*(T_coolant/T_cw)) # Kerosene Nusselt number from RPA
+    f = 0.316 * Re**(-0.25) # Blasius equation for friction factor in turbulent flow
+    Nu = ((f/8) * (Re-1000) * coolant_prandtl_number)/(1 + 12.7*( (f/8)**0.5 ) * (coolant_prandtl_number**(2/3) - 1)) # Dittus-Boelter equation with correction factors for turbulent flow
     # Calculate h_H2 the heat transfer coefficient for the cooling channels
     h_H2 = (Nu * coolant_thermal_conductivity)/Dh # [W/m^2K]
 
@@ -1141,7 +1143,7 @@ def calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info):
     # Debug Print
     # print(f'Calculated q_h2: {q_h2} [W] at x = {x} [m] with T_cw = {T_cw} [K] \n h_H2 = {h_H2} [W/m^2K] \n A_H2 = {A_H2} [m^2] \n T_LH2 = {T_LH2} [K] \n T_cw - T_LH2 = {T_cw - T_LH2} [K]')
 
-    return q_h2, T_coolant_new, P_coolant_new, dF_dx, h_H2, C3, v, coolant_density, chan_area, Re, Nu, Dh, coolant_thermal_conductivity, pressureLoss, f,coolant_viscosity, minorLosses, majorLosses, fluidLosses
+    return q_h2, T_coolant_new, P_coolant_new, dF_dx, h_H2, C3, v, coolant_density, chan_area, Re, Nu, Dh, coolant_thermal_conductivity, pressureLoss, f,coolant_viscosity, minorLosses, majorLosses, fluidLosses, coolant_prandtl_number
 
 # Function to calculate the heat transfer through the walls
 def calc_q_wall(dx, x, y, T_hw, T_cw, engine_info):
@@ -1360,7 +1362,7 @@ def newton_solve_temperatures(dx, x, y, s, T_LH2, P_LH2, engine_info,
     def F(T):
         T_hw, T_cw = T
         q_gas, heatflux, h_gas, A_gas, R_hot, areasurface = calc_q_gas(dx, x, y, T_hw, engine_info)
-        q_h2, T_LH2_new, P_LH2_new, dF_dx, h_H2, C3, v, rho_LH2, chan_area, Re, Nu, Dh, therm_LH2, pressureLoss, f, coolant_viscocity, minorLosses, majorLosses, fluidLosses = calc_q_h2(dx, x, y, s, T_cw, T_LH2, P_LH2, engine_info)
+        q_h2, T_LH2_new, P_LH2_new, dF_dx, h_H2, C3, v, rho_LH2, chan_area, Re, Nu, Dh, therm_LH2, pressureLoss, f, coolant_viscocity, minorLosses, majorLosses, fluidLosses, coolant_prandtl_number = calc_q_h2(dx, x, y, s, T_cw, T_LH2, P_LH2, engine_info)
         q_wall = calc_q_wall(dx, x, y, T_hw, T_cw, engine_info)
 
         f1 = q_wall - q_gas
@@ -1731,15 +1733,32 @@ def main():
     chan_t = np.full(len(x_array), 0.899e-3, dtype=float)
     chan_h = np.full(len(x_array), 2E-3, dtype=float) # Channel height [m]
 
+    first_sixty_mask = x_array <= 0.06
+    if np.any(first_sixty_mask):
+        chan_t[first_sixty_mask] = 1.5e-3
+        count = np.count_nonzero(first_sixty_mask)
+        if count > 1:
+            chan_h[first_sixty_mask] = np.linspace(3.0e-3, 2.0e-3, count)
+        else:
+            chan_h[first_sixty_mask] = 3.0e-3
+
     if throat_index < len(x_array):
-        chan_t[throat_index:] = np.linspace(0.899e-3, 1.5e-3, len(x_array) - throat_index)
-        chan_h[throat_index:] = np.linspace(2E-3, 3.5E-3, len(x_array) - throat_index)
+        span = len(x_array) - throat_index
+        if span > 1:
+            chan_t[throat_index:] = np.linspace(0.899e-3, 1.5e-3, span)
+            chan_h[throat_index:] = np.linspace(2.0e-3, 5.0e-3, span)
+        else:
+            chan_t[throat_index:] = 1.5e-3
+            chan_h[throat_index:] = 5.0e-3
 
     for x in x_array:
         r = calc_radius(x, A_c[0], A_t[0], A_e[0], L_c[0]) # Calculate radius at current x location [m]
         land, width = calc_cooling_channel_geometry(r, 1.6E-3, 1E-3, 0.8E-3, Ncc, 'constland') # Calculate channel dimensions at current x location [m]
         chan_land.append(land) # Append channel land to list [m]
-        chan_w.append(width) # Append channel width to list [m]        
+        chan_w.append(width) # Append channel width to list [m]    
+
+    # If x values are with in the first 60mm (combustion chamber), set channel thickness to 1.5mm and channel height to increase from 2mm to 3.5mm
+             
         
     # Create an instance of the EngineInfo class to store all engine information in a single object NOTE: All values are in SI units
     
@@ -1843,6 +1862,8 @@ def main():
     minorLosses_array = np.zeros(array_length) # Minor losses in the coolant channels [Pa]
     majorLosses_array = np.zeros(array_length) # Major losses in the coolant channels [Pa]
     fluidLosses_array = np.zeros(array_length) # Fluid losses in the coolant channels [Pa]
+    coolant_prandtl_number_array = np.zeros(array_length) # Coolant prandtl number in the coolant channels [dimensionless]
+
     T_hw_matrix = [[]]
     # Initialize the first values of T_hw, T_cw, T_LH2, P_LH2
     s = dx # Initialize s, the distance along the coolant channel, to zero
@@ -1900,7 +1921,7 @@ def main():
 
             # Calculate Heat Transfer Information based off convergence values, overwrite T_LH2 and P_LH2 with new values
             q_gas,heatflux, h_gas, A_gas, R_hot, areasurface = calc_q_gas(dx, x, y, T_hw, engine_info)
-            q_h2, T_coolant, P_coolant, dF_dx_val, h_H2,C3,v, rho_LH2, chan_area, Re, Nu, Dh, therm_LH2, pressureLoss, f, coolant_viscosity,  minorLosses, majorLosses, fluidLosses = calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info) # Calculate heat transfer through coolant channels
+            q_h2, T_coolant, P_coolant, dF_dx_val, h_H2,C3,v, rho_LH2, chan_area, Re, Nu, Dh, therm_LH2, pressureLoss, f, coolant_viscosity,  minorLosses, majorLosses, fluidLosses, coolant_prandtl_number = calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info) # Calculate heat transfer through coolant channels
             q_wall = calc_q_wall(dx, x, y, T_hw, T_cw, engine_info) # Calculate heat transfer through the wall
             
             # Calculate dF_dx and dQ_dx based on the heat transfer through the coolant channels
@@ -1935,6 +1956,7 @@ def main():
             minorLosses_array[i] = minorLosses # Store the minor losses in the coolant channels [Pa]
             majorLosses_array[i] = majorLosses # Store the major losses in the coolant
             fluidLosses_array[i] = fluidLosses # Store the fluid losses in the coolant channels [Pa]
+            coolant_prandtl_number_array[i] = coolant_prandtl_number # Store the coolant prandtl number in the coolant channels [dimensionless]
             # print(f'q_gas: {q_gas} [W] \n q_h2 = {q_h2} [W] \n q_wall = {q_wall} [W] \n at x = {x} [m] with T_hw = {T_hw} [K] with T_cw = {T_cw} [K] \n T_LH2_new = {T_LH2} [K] \n P_LH2_new = {P_LH2} [Pa] \n T_LH2_new = {T_LH2 - T_LH2_array[-1] } [K] \n P_LH2_new = {P_LH2_array[-1] - P_LH2} [Pa] \n dF_dx = {dF_dx[i]} [N/m] \n dQ_dx = {dQ_dx[i]} [W-s/kg] \n')
             # Re-run the flow data calculate with updated dF_dx and dQ_dx values
 
@@ -1971,6 +1993,7 @@ def main():
     # create_plot([x for x in xp_m], [rho_coolant for rho_coolant in reversed(rho_coolant_array)], "Distance from Injector [m]", "Coolant Density [kg/m^3]", "Coolant Density vs Distance from Injector")
     # create_plot([T_cw for T_cw in reversed(T_cw_array)], [rho_coolant for rho_coolant in reversed(rho_coolant_array)], "T_cw [K]", "Coolant Density [kg/m^3]", "T_cw vs Coolant Density")
     # create_plot([x for x in xp_m], [C3 for C3 in reversed(C3_array)], "Distance from Injector [m]", "C3 [W/m^2K]", "C3 vs Distance from Injector")
+    create_plot([x for x in xp_m], [coolant_prandtl_number for coolant_prandtl_number in reversed(coolant_prandtl_number_array)], "Distance from Injector [m]", "Coolant Prandtl Number", "Coolant Prandtl Number vs Distance from Injector")
     # Plot T_hw and T_cw on the same plot for comparison
     plt.figure()
     plt.plot([x for x in xp_m], [T_cw-273.15 for T_cw in reversed(T_cw_array)], label="T_cw [C]")
