@@ -13,6 +13,7 @@ g = 9.81 # Gravity in m/s/s^2 (sea level)
 c = 295 # Speed of sound in air at sea level in m/s (approximate, varies with temperature and pressure)
 Ru = 8.31446261815324 # Univeral gas constant [J/mol*K]
 specificGasConstant = Ru/0.0275787914406925 # Specifc gas constant [J/Kmol] (named wrong but cant be arsed to change it)
+PAtmBar = 1.01325 # Atmospheric pressure in bar
 
 
 class RocketEngine:
@@ -33,7 +34,7 @@ class RocketEngine:
         # Convert chamber pressure in bar to psi
         chamber_pressure_psi = self.chamber_pressure_bar * 14.5038  # Convert bar to psi
 
-        fullOutput = cea.get_full_cea_output(Pc = self.chamber_pressure_bar, MR = of_ratio, eps=self.expansion_ratio, short_output=1, pc_units='bar', show_mass_frac=1, output='siunits' )
+        fullOutput = cea.get_full_cea_output(Pc = self.chamber_pressure_bar, MR = of_ratio, PcOvPe=self.chamber_pressure_bar/PAtmBar ,eps=self.expansion_ratio, short_output=1, pc_units='bar', show_mass_frac=1, output='siunits' )
         return fullOutput
 
     def calculate_total_impulse(self):
@@ -230,7 +231,7 @@ class RocketEngine:
             c_star_array.append(data['Cstar_t'])  # Characteristic velocity at throat conditions
             chamber_pressure_array.append(data['P_c']) # Chamber pressure in Pa
             Cp_array.append(data['Cp_Equil_t'])
-            F_vac_array.append(data['Isp_vac_e']/data['Isp_e']*self.thrust)  # Vacuum thrust in N
+            F_vac_array.append(data['Isp_vac_e']/data['Isp_vac_t']*self.thrust)  # Vacuum thrust in N
 
         
 
@@ -538,7 +539,6 @@ class RocketEngine:
         rho = p/(0.2869*(T+273.15))  # Density in kg/m^3
         return rho
 
-
     def estimate_altitude(self, of_ratios, target_of, dt = 0.1, recovery_mass = 5, engine_mass = 10, payload_mass = 2, tank_mass_per_meter = 6):
         # Function to calculate altitute rocket will get reach
         # Inputs:
@@ -736,14 +736,41 @@ def The5k():
     The5k.estimate_altitude(of_data, target_of=2, dt=0.1, recovery_mass=5, engine_mass=10, payload_mass=2, tank_mass_per_meter=6)  # Estimate altitude the rocket will reach with the optimal O/F ratio
     pass
 
+
+def The2_5k():
+    # FUNCTION WORKSPACE
+    # This is a function for a 2.5kN rocket engine LOX - KERO to test LOX Regen 
+
+    engine_name = 'The25k'  # Name of the engine for display purposes
+    desired_engine_thrust = 2500 # Estimated thrust sea level [N]
+    Pc = 20 # Chamber presssure in bar (desired)
+    fuel_stroage_density = 810 #795.6  # Density of RP-1 in kg/m^3 (approximate)
+    ox_storage_density = 1140.0  # Density of LOX in kg/m
+    burn_time = 38  # Estimated burn time in seconds
+    expansion_ratio = 8  # No fixed expansion ratio for the 25k engine yet...
+    # o/f Ratio array to find the optimal O/F ratio
+    of_ratios = np.arange(0.5, 7, 0.1)  # Define O/F ratios for the 25k engine
+    # Function to run rocket engine calculations/design
+
+
+    The2_5k = RocketEngine('LOX', 'RP-1', Pc, expansion_ratio, burn_time, desired_engine_thrust, num_engines=1, Cd = 0.4) # Set up 2.5kN engine class
+    of_data = The2_5k.display_MR_curves(of_ratios, fuel_stroage_density, ox_storage_density, engine_name=engine_name, target_of=2) # Display the performance curves for the 25k engine to determine optimal O/F
+    
+  
+    The2_5k.estimate_altitude(of_data, target_of=2, dt=0.1, recovery_mass=5, engine_mass=5, payload_mass=1, tank_mass_per_meter=6)  # Estimate altitude the rocket will reach with the optimal O/F ratio
+    pass
+
+
 def  main():
     # Call functions and run code here
 
 
     # RS25_Design()
 
-    The5k()
 
+    # The5k()
+    The2_5k()    
+    pass
 
 
     

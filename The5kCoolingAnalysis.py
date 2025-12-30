@@ -1026,7 +1026,6 @@ def calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info):
     # Calculate the Nusselt Number
     # Nu = ( (f/8)*Re*coolant_prandtl_number*(T_coolant/T_cw)**0.55)/( 1 + (f/8)**0.5 * (B - 8.48)) *C1 * C2 #* C3 
     # Nu = 0.021*Re**(0.8)*coolant_prandtl_number**(0.4)*(0.64+0.36*(T_coolant/T_cw)) # Kerosene Nusselt number from RPA
-    f = 0.316 * Re**(-0.25) # Blasius equation for friction factor in turbulent flow
     Nu = ((f/8) * (Re-1000) * coolant_prandtl_number)/(1 + 12.7*( (f/8)**0.5 ) * (coolant_prandtl_number**(2/3) - 1)) # Dittus-Boelter equation with correction factors for turbulent flow
     # Calculate h_H2 the heat transfer coefficient for the cooling channels
     h_H2 = (Nu * coolant_thermal_conductivity)/Dh # [W/m^2K]
@@ -1595,10 +1594,10 @@ def main():
     Ncc = 68 #430.0 # Number of coolant channels - guessed 
     e = 6.5E-4 # Channel wall roughness of AlSi10Mg [m]
     k = 165  # Thermal conductivity of AlSi10Mg [W/m*K]  (https://www.protolabs.com/media/1022870/aluminium-uk-1.pdf) 
-    mdot_coolant = 0.57 # kg/s mass flow rate of fuel through the coolant channels. 
+    mdot_coolant = 0.56 # kg/s mass flow rate of fuel through the coolant channels. 
     meltingpoint = 273.15+300 # Melting point of aluminum [K]
-    expRatio = 12 # Nozzle expansion ratio
-    contChamber = 10 # Chamber contraction ratio
+    expRatio = 10 # Nozzle expansion ratio
+    contChamber = 8 # Chamber contraction ratio
     L_star = 45 # L*
     RU = 1.2 # Radius of contraction 
     RD = 0.385 # Radius of throat curve
@@ -1733,7 +1732,7 @@ def main():
     chan_t = np.full(len(x_array), 0.899e-3, dtype=float)
     chan_h = np.full(len(x_array), 2E-3, dtype=float) # Channel height [m]
 
-    first_sixty_mask = x_array <= 0.06
+    first_sixty_mask = x_array <= 0.08
     if np.any(first_sixty_mask):
         chan_t[first_sixty_mask] = 1.5e-3
         count = np.count_nonzero(first_sixty_mask)
@@ -1746,10 +1745,10 @@ def main():
         span = len(x_array) - throat_index
         if span > 1:
             chan_t[throat_index:] = np.linspace(0.899e-3, 1.5e-3, span)
-            chan_h[throat_index:] = np.linspace(2.0e-3, 5.0e-3, span)
+            chan_h[throat_index:] = np.linspace(2.0e-3, 3.0e-3, span)
         else:
             chan_t[throat_index:] = 1.5e-3
-            chan_h[throat_index:] = 5.0e-3
+            chan_h[throat_index:] = 3.0e-3
 
     for x in x_array:
         r = calc_radius(x, A_c[0], A_t[0], A_e[0], L_c[0]) # Calculate radius at current x location [m]
@@ -1773,8 +1772,8 @@ def main():
 
 
     # Print out dimensions for selected x locations
-    x_locs = [0, 60.426/1000, 79.972/1000, 145.223/1000, 161.137/1000, 164.861/1000, 296.635/1000, 321.635/1000] # x locations in meters
-    x_names =['StartChamber', 'EndChamber', 'StartContraction', 'EndContraction', 'StartThroatFillet', 'EndThroatFillet', 'StartNozzleBell', 'EndNozzleBell']
+    x_locs = [0, 60.426/1000, 79.972/1000, 112.5/1000, 145.223/1000, 161.137/1000, 164.861/1000, 180/1000, 210/1000, 260/1000, 296.635/1000, 321.635/1000] # x locations in meters
+    x_names =['StartChamber', 'EndChamber', 'StartContraction','MidContraction', 'EndContraction', 'Throat', 'EndThroatFillet', '180Nozzle', '210Nozzle', '260Nozzle', 'EndNozzleBell', 'EndEndNozzleBell']
     header_fmt = "{:<20} {:>15} {:>15} {:>18} {:>18} {:>18} {:>20}"
     row_fmt = "{:<20} {:>15.6f} {:>15.6f} {:>18.6f} {:>18.6f} {:>18.6f} {:>20.6f}"
 
@@ -1987,8 +1986,8 @@ def main():
     # create_plot([x for x in xp_m], [areasurface for areasurface in reversed(areasurface_array)], "Distance from Injector [m]", "Surface Area [m^2]", "Surface Area vs Distance from Injector")
     # create_plot([x for x in xp_m], [v for v in reversed(v_fluid_array)], "Distance from Injector [m]", "Coolant Channel Velocity [m/s]", "Fluid Velocity vs Distance from Injector")
     # create_plot([x for x in xp_m], [chan_area for chan_area in reversed(chan_area_array)], "Distance from Injector [m]", "Channel Area [m^2]", "Channel Area vs Distance from Injector")
-    # create_plot([x for x in xp_m], [Re for Re in reversed(ReynoldsNum_array)], "Distance from Injector [m]", "Reynolds Number", "Reynolds Number vs Distance from Injector")
-    # create_plot([x for x in xp_m], [Nu for Nu in reversed(NusseltCold_array)], "Distance from Injector [m]", "Nusselt Number", "Nusselt Number vs Distance from Injector")
+    create_plot([x for x in xp_m], [Re for Re in reversed(ReynoldsNum_array)], "Distance from Injector [m]", "Reynolds Number", "Reynolds Number vs Distance from Injector")
+    create_plot([x for x in xp_m], [Nu for Nu in reversed(NusseltCold_array)], "Distance from Injector [m]", "Nusselt Number", "Nusselt Number vs Distance from Injector")
     # create_plot([x for x in xp_m], [Dh for Dh in reversed(Dh_array)], "Distance from Injector [m]", "Hydraulic Diameter [m]", "Hydraulic Diameter vs Distance from Injector")
     # create_plot([x for x in xp_m], [rho_coolant for rho_coolant in reversed(rho_coolant_array)], "Distance from Injector [m]", "Coolant Density [kg/m^3]", "Coolant Density vs Distance from Injector")
     # create_plot([T_cw for T_cw in reversed(T_cw_array)], [rho_coolant for rho_coolant in reversed(rho_coolant_array)], "T_cw [K]", "Coolant Density [kg/m^3]", "T_cw vs Coolant Density")
@@ -2022,7 +2021,13 @@ def main():
     print(f'Coolant Delta P: {P_coolant_array[0] - P_coolant_array[-1]:.2E} Pa {(P_coolant_array[0] - P_coolant_array[-1])*1E-5} [Bar] Start Pressure {P_coolant_array[0]:.2E} Pa End Pressure {P_coolant_array[-1]:.2E} Pa')
     print(f'Coolant Delta T: {T_coolant_array[-1] - T_coolant_array[0]:.2f} K {T_coolant_array[-1] - T_coolant_array[0]:.2f} [C] Start Temperature {T_coolant_array[0]:.2f} K {T_coolant_array[0]-273.15:.2f} C End Temperature {T_coolant_array[-1]:.2f} K {T_coolant_array[-1]-273.15:.2f} C')
     
-        
+    print("_"*50)
+    print("x", x)
+    print("q_gas", q_gas_array[-1])
+    print("q_h2", q_coolant_array[-1])
+    print("h_H2", h_coolant_array[-1], "Nu", NusseltCold_array[-1], "s/Dh", s/Dh_array[-1])
+    print("T_coolant", T_coolant_array[-1], "T_cw", T_cw_array[-1], "T_hw", T_hw_array[-1])
+    print("Dh", Dh_array[-1], "chan_area", chan_area_array[-1], "v", v_fluid_array[-1], "Re", ReynoldsNum_array[-1], "Pr", coolant_prandtl_number_array[-1])
     plt.show()
 
 main()

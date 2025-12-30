@@ -1141,7 +1141,7 @@ def calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info):
     h_next = h + (q_h2) / (engine_info.mdot_coolant/engine_info.Ncc) # Convert q_h2 to kJ/s and divide by mass flow rate to get enthalpy change [kJ/kg]
 
     # Calculate deltaT based off enthalpy change
-    result = RP.REFPROPdll("OXYGEN", "HP", "T", RP.MASS_BASE_SI, 0, 0, h_next, P_coolant_new, z)
+    result = RP.REFPROPdll("OXYGEN", "HP", "T", RP.MASS_BASE_SI, 0, 0, h_next, P_coolant, z)
     T_coolant_new = result.Output[0]
 
     # T_coolant_new = PropsSI("T", "H", h_next*1000, "P", P_LH2_new, fluid) # Convert h_next to J/kg and get new temperature [K] using NIST REFPROP
@@ -1571,47 +1571,22 @@ def main():
     # Variable to show plots
     showPlots = False
 
-    # Constants RS25
-    # gam = 1.19346 #1.168 # Specific heat ratio  - CEA data
-    # C_star = 2300 #1783 # Characteristic velocity in [m/s] - CEA data
-    # P_c = 18.23E6 #2E6 # Chamber stagnation pressure in [Pa] - CEA data
-    # T_c = 3542 #3254 # Chamber stagnation temperature in [K] - CEA data
-    # Cp = 3.71330E3	 # Specific heat at constant pressure in [J/KgK] - CEA data
-    # F_Vac = 2184076.8131#5200 # Vacuum thrust in [N] - CEA data
-    # M_c = 0.26419 # Injector mach number - calculated by trial and error, testfile.py has a good example of how to do this
-    # Ncc = 390#430.0 # Number of coolant channels - guessed 
-    # e = 2.5E-7 # Channel wall roughness of Narloy Z [m]
-    # k = 316  # Thermal conductivity of Narloy Z [W/m*K] 
-    # mdot_LH2 = 13.2 # kg/s mass flow rate of the LH2 in the coolant channels. 
-    # meltingpoint = 1000 # Melting point of inconel Z [K]
-    # expRatio = 69.5 # Nozzle expansion ratio
-    # contChamber = 2.7 # Chamber contraction ratio
-    # L_star = 36 # L*
-    # RU = 1.5 # Radius of contraction 
-    # RD = 0.385 # Radius of throat curve
-    # R1 = 1.73921 # Radius of entry curve
-    # theta1 = 25 #25.4157 # Radius of throat angle 
-    # thetaD = 37 # Angle of expansion [degrees]
-    # thetaE =  5.3738 # half-angle of the nozzle [degrees]
-    # theta_c_deg = 30 # nozzle contraction half angle
-
-
     # Constants 5kN Engine LOX/RP1
-    gam = 1.168 # Specific heat ratio  - CEA data
-    C_star = 1784 # Characteristic velocity in [m/s] - CEA data
+    gam = 1.1802 # Specific heat ratio  - CEA data
+    C_star = 1728 # Characteristic velocity in [m/s] - CEA data
     P_c = 2E6 # Chamber stagnation pressure in [Pa] - CEA data
-    T_c = 3254 # Chamber stagnation temperature in [K] - CEA data
+    T_c = 3241 # Chamber stagnation temperature in [K] - CEA data
     Cp = 3.71330E3	 # Specific heat at constant pressure in [J/KgK] - CEA data
-    F_Vac = 5342.21 # Vacuum thrust in [N] - CEA data
-    M_c = 0.07470000000000098 #0.05959 # Injector mach number - calculated by trial and error, testfile.py has a good example of how to do this
-    Ncc = 68 #430.0 # Number of coolant channels - guessed 
+    F_Vac = 3209# Vacuum thrust in [N] - CEA data
+    M_c = 0.09970000000000143 #0.05959 # Injector mach number - calculated by trial and error, testfile.py has a good example of how to do this
+    Ncc = 40 #430.0 # Number of coolant channels - guessed 
     e = 6.5E-4 # Channel wall roughness of AlSi10Mg [m]
     k = 165  # Thermal conductivity of AlSi10Mg [W/m*K]  (https://www.protolabs.com/media/1022870/aluminium-uk-1.pdf) 
-    mdot_coolant = 1.13 # kg/s mass flow rate of fuel through the coolant channels. 
+    mdot_coolant = 0.76 # kg/s mass flow rate of fuel through the coolant channels. 
     meltingpoint = 273.15+300 # Melting point of aluminum [K]
-    expRatio = 10 # Nozzle expansion ratio
-    contChamber = 8 # Chamber contraction ratio
-    L_star = 45 # L*
+    expRatio = 8 # Nozzle expansion ratio
+    contChamber = 6 # Chamber contraction ratio
+    L_star = 30 # L*
     RU = 1.2 # Radius of contraction 
     RD = 0.385 # Radius of throat curve
     R1 = 1.73921 # Radius of entry curve
@@ -1627,7 +1602,7 @@ def main():
      # Create gas object for chamber estimates
     gas = ct.Solution('gri30.yaml')
 
-
+    # Refs 8-12, 8-13, 8-14
     # Calculate the engine geometry based off CEA data 
     A_c, A_t, A_e, L_c, L_e, mdot_chamber, Vc = engine_geometry(gam, P_c, 101325, T_c, F_Vac, expRatio, contChamber, L_star, RU, RD, theta_c_deg, thetaE, False, False)
 
@@ -1715,18 +1690,17 @@ def main():
     xi = 0 # Start of chamber [m]
     xf = L_c[0] + L_e[0] # End of chamber [m]
     dx = ((L_c[0] + L_e[0])/500) # Step size [m]
-    array_length = int(xf/dx) # Length of the arrays to hold the flow data
+    array_length = int(xf/dx)+1 # Length of the arrays to hold the flow data
     x_array = np.linspace(xi, xf, array_length) # Array of x values from injector [m]
 
     
     # Calculate channel dimensions for all of x
-    def calc_cooling_channel_geometry(r, chan_land, chan_w, min_width, max_width, Ncc, mode):
+    def calc_cooling_channel_geometry(r, chan_land, chan_w, min_width, Ncc, mode):
         # Calculate the cooling channel geometry at a given radius r [m]
         # r = radius at the current x location [m]
         # chan_land = channel land [m]
         # chan_width = channel width [m]
         # min_width = minimum channel width [m]
-        # max_width = maximum channel width [m]
         # Ncc = number of coolant channels
         # mode = 'constland' or 'constwidth' to determine if the channel land or channel width is constant
 
@@ -1737,15 +1711,11 @@ def main():
             chan_w = width_per_channel - chan_land # Channel width [m]
             if chan_w < min_width:
                 chan_w = min_width
-            elif chan_w > max_width:
-                chan_w = max_width
         elif mode == 'constwidth':
             chan_land = width_per_channel - chan_w # Channel land [m]
             if chan_land < min_chan_land:
                 chan_land = min_chan_land
         return chan_land, chan_w
-
-
     chan_land = [] # Channel land [m]
     chan_w = []
     throat_index = int(np.argmin(np.abs(x_array - L_c[0])))
@@ -1757,22 +1727,22 @@ def main():
         chan_t[first_sixty_mask] = 1.5e-3
         count = np.count_nonzero(first_sixty_mask)
         if count > 1:
-            chan_h[first_sixty_mask] = np.linspace(2.0e-3, 2.0e-3, count)
+            chan_h[first_sixty_mask] = np.linspace(3.0e-3, 2.0e-3, count)
         else:
-            chan_h[first_sixty_mask] = 2.0e-3
+            chan_h[first_sixty_mask] = 3.0e-3
 
     if throat_index < len(x_array):
         span = len(x_array) - throat_index
         if span > 1:
             chan_t[throat_index:] = np.linspace(0.899e-3, 1.5e-3, span)
-            chan_h[throat_index:] = np.linspace(2.0e-3, 2.0e-3, span)
+            chan_h[throat_index:] = np.linspace(2.0e-3, 3.0e-3, span)
         else:
             chan_t[throat_index:] = 1.5e-3
-            chan_h[throat_index:] = 2.0e-3
+            chan_h[throat_index:] = 3.0e-3
 
     for x in x_array:
         r = calc_radius(x, A_c[0], A_t[0], A_e[0], L_c[0]) # Calculate radius at current x location [m]
-        land, width = calc_cooling_channel_geometry(r, 1.4E-3, 1E-3, 2E-3, 3E-3, Ncc, 'constland') # Calculate channel dimensions at current x location [m]
+        land, width = calc_cooling_channel_geometry(r, 1.4E-3, 1E-3, 0.8E-3, Ncc, 'constland') # Calculate channel dimensions at current x location [m]
         chan_land.append(land) # Append channel land to list [m]
         chan_w.append(width) # Append channel width to list [m]    
 
@@ -1814,10 +1784,10 @@ def main():
             x_name,
             x_array[index],
             r,
-            chan_land[index],
-            chan_w[index],
-            chan_h[index],
-            chan_t[index],
+            chan_land[index]*1E3,
+            chan_w[index]*1E3,
+            chan_h[index]*1E3,
+            chan_t[index]*1E3,
         ))
 
      # Create an instance of the EngineInfo class to store all engine information in a single object NOTE: All values are in SI units
@@ -1834,18 +1804,20 @@ def main():
     
     dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, engine_info.M_c, engine_info.P_c, engine_info.T_c, keydata) # returns pressure, temperature, mach number throughout  entire engine at each x value (distance in m from injector) and step size in m
     
+    
     create_plot([xp for xp in xp_m], [np.sqrt(y[0]) for y in yp_m], "Distance from Injector [m]", "Mach Number", "Mach Number vs Distance from Injector")
     create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
     create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
 
     
+    plt.show()
   
     #----------------------------------------------------------------------------------------------
     # Define start conditions for thermal analysis
     T_hw_init = 500.0 # Wall temperature at the injector [K] - This is a guess, can be changed later
     T_cw_init = 300.0 # Coolant temperature at the injector [K] - This is a guess, can be changed later
-    T_coolant_init =  70 #273.15+15 # Coolant temperature in Kelvin at inlet of coolant channel
-    P_coolant_init = 3.5E6 #38.93E6 # Coolant pressure in Pascals at inlet of coolant channel
+    T_coolant_init =  80 #273.15+15 # Coolant temperature in Kelvin at inlet of coolant channel
+    P_coolant_init = 3E6 #38.93E6 # Coolant pressure in Pascals at inlet of coolant channel
     #----------------------------------------------------------------------------------------------
     
 #     # Initialize arrays with initial conditions for thermal analysis
@@ -2035,7 +2007,7 @@ def main():
     print(f'Peak hot wall heat transfer coefficient: {max(h_gas_array):.2f} W/m^2K')
     print(f'Coolant Delta P: {P_coolant_array[0] - P_coolant_array[-1]:.2E} Pa {(P_coolant_array[0] - P_coolant_array[-1])*1E-5} [Bar] Start Pressure {P_coolant_array[0]:.2E} Pa End Pressure {P_coolant_array[-1]:.2E} Pa')
     print(f'Coolant Delta T: {T_coolant_array[-1] - T_coolant_array[0]:.2f} K {T_coolant_array[-1] - T_coolant_array[0]:.2f} [C] Start Temperature {T_coolant_array[0]:.2f} K {T_coolant_array[0]-273.15:.2f} C End Temperature {T_coolant_array[-1]:.2f} K {T_coolant_array[-1]-273.15:.2f} C')
-    print(f'Throat (x){xp_m[throat_index]:.4f} [m] \n q" (Heatflux) {heatflux_hotside[throat_index]:.2E} W/m^2 \n h_gas {h_gas_array[throat_index]:.2E} W/m^2 k \n T_aw (')
+    
         
     plt.show()
 
