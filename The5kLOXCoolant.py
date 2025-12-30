@@ -944,7 +944,6 @@ def calc_q_h2(dx, x, y, s, T_cw, T_coolant, P_coolant, engine_info):
     coolant_entropy = result.Output[2]
     coolant_viscosity = result.Output[3]
     coolant_thermal_conductivity = result.Output[4]
-    print("COOLANT DENSITY kg/m^3: ", coolant_density)
     # Calculate Prandtl number: Pr = (viscosity * specific_heat) / thermal_conductivity
     # Specific heat (Cp) can be derived from enthalpy and temperature
     Cp = RP.REFPROPdll("OXYGEN", "TP", "CP", RP.MASS_BASE_SI, 0, 0, T_coolant, P_coolant, z)
