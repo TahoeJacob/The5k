@@ -747,8 +747,8 @@ def calc_h_gas(x, y, dx, T_hw, T_star, engine_info):
     #T_star = T_s / (1 + ((gam - 1)/2)*N) # Reference temperature [K]
     #T_star = (1 + 0.032*N+0.58*(T_hw/T-1))*T
 
-    # Calculate transport properties
-    eta, llambda, Cp, Pr, rho  = engine_info.calc_transport_properties(T_star, P)
+    # Calculate transport properties at stagnation conditions (consistent with sigma-corrected Bartz)
+    eta, llambda, Cp, Pr, rho  = engine_info.calc_transport_properties(T_s, P_c)
     #print(f'Pressure [Pa] {P} \n Temperature [K] {T_star} \n eta [Pa.s] {eta} \n Thermal Conductivity [W/mK] {llambda} \n Cp [J/KgK] {Cp} \n Prantl Number {Pr}\n Dt [m] {Dt} \n P_c [Pa] {P_c} \n C_star [m/s] {C_star} \n Ru [m] {Ru} \n Area [m^2] {area} \n A_t [m^2] {A_t} \n T_s [K] {T_s} \n Gamma {gam} \n Local Mach Number {mach} \n Reference Temperature [K] {T_star}')
     # NOTE: Mistake on cryo-rocket barts equation is 0.026/(Dt**0.2) not 0.023/(Dt**2)
 
@@ -858,7 +858,7 @@ def calc_q_gas(dx, x, y, T_hw, engine_info):
     q_gas = (T_aw - T_hw) / R_hot  # [W] - using thermal resistance to calculate heat transfer
 
     # print(f'Calculated q_gas: {q_gas} [W] at x = {x} [m] with T_hw = {T_hw} [K] \n radius = {engine_info.get_radius(x)} [m] \n h_gas = {h_gas} [W/m^2K] \n A_gas = {A_gas} [m^2] \n T_aw = {T_aw} [K] \n T_aw - T_hw = {T_aw - T_hw} [K] \n Q_gas = {q_gas/(2*np.pi*engine_info.get_radius(x)*dx)} [W/m]')
-    heatflux= q_gas / A_gas  # [W/m^2]
+    heatflux = h_gas * (T_aw - T_hw)  # [W/m^2]
 
     # Calculate dF (friction of gas in chamber)
     eta, llambda, Cp, Pr, rho  = engine_info.calc_transport_properties(T_star, P)
@@ -1616,7 +1616,12 @@ def newton_solve_temperatures(dx, x, y, s, T_LH2, P_LH2, engine_info,
             delta = np.linalg.solve(J, -F_val)
         except np.linalg.LinAlgError:
             raise RuntimeError("Jacobian is singular. Try different initial guesses.")
-        
+
+        # Damp step: limit T_hw and T_cw changes to 200 K per iteration
+        max_step = 50.0
+        if np.max(np.abs(delta)) > max_step:
+            delta = delta * (max_step / np.max(np.abs(delta)))
+
         T += delta
 
     raise RuntimeError("Newton-Raphson did not converge.")
