@@ -1147,7 +1147,7 @@ def calc_q_h2(dx, x, y, s, T_cw, T_LH2, P_LH2, engine_info):
 
     # Get channel dimensions for the current x position
     chan_w, chan_h, chan_t, chan_land = engine_info.get_geo_interp(x, dx)
-    chan_w_next, chan_h_next, chan_t_next, chan_land_next = engine_info.get_geo_interp(x+dx, dx)
+    chan_w_next, chan_h_next, chan_t_next, chan_land_next = engine_info.get_geo_interp(x-dx, dx)
 
 
     # Calculate hydraluic diameter of cooling channels at x
@@ -1231,7 +1231,7 @@ def calc_q_h2(dx, x, y, s, T_cw, T_LH2, P_LH2, engine_info):
     C1 = (1 + 1.5*Pr_LH2**(-1/6) * Re**(-1/8) * (Pr_LH2-1))/(1+1.5*Pr_LH2**(-1/6)*Re**(-1/8)*(Pr_LH2*xi - 1))*xi
 
     # Calculate C2 coefficient
-    C2 = 1 + (s/Dh)**(-0.7) * (T_cw/T_LH2)**(0.1)
+    C2 = 1 + xi**(0.1) * (s/Dh)**(-0.7)
     # Calculate C3 Eqtn 6.1.14 
     radius, radiusType = engine_info.get_r_value(x)
 
@@ -1342,9 +1342,7 @@ def calc_q_h2(dx, x, y, s, T_cw, T_LH2, P_LH2, engine_info):
 
     #fluidLosses = (2/(engine_info.calc_area(x)*engine_info.Ncc)+(engine_info.calc_area(x+dx)*engine_info.Ncc))*( (1/(rho_LH2*engine_info.calc_area(x)*engine_info.Ncc)) - (1/(rho_LH2*engine_info.calc_area(x+dx)*engine_info.Ncc)))# Calculate the fluid losses in the coolant channels
     
-    fluidLosses = (2/((chan_area*engine_info.Ncc) + (chan_area_next*engine_info.Ncc))) * (engine_info.mdot_LH2/engine_info.Ncc) ** 2 * ((1/(rho_LH2*chan_area*engine_info.Ncc)) - (1/(rho_LH2*chan_area_next*engine_info.Ncc)))
-    
-    pressureLoss = minorLosses + majorLosses + fluidLosses # Calculate the total pressure loss in the coolant channels
+    pressureLoss = minorLosses + majorLosses # Calculate the total pressure loss in the coolant channels
     
     P_LH2_new = P_LH2 - pressureLoss # Calculate the new pressure of the coolant channels
 
@@ -1639,11 +1637,11 @@ def main():
     T_c = 3542 # Chamber stagnation temperature in [K] - CEA data
     Cp = 3.7848E3	 # Specific heat at constant pressure in [J/KgK] - CEA data
     F_Vac = 2184076.8131 # Vacuum thrust in [N] - CEA data
-    M_c = 0.26419 # Injector mach number - calculated by trial and error, testfile.py has a good example of how to do this
+    M_c = 0.26397000000001397 #  0.26419  Injector mach number - calculated by trial and error, testfile.py has a good example of how to do this
     Ncc = 390#430.0 # Number of coolant channels - guessed 
     e = 2.5E-7 # Channel wall roughness of Narloy Z [m]
     k = 316  # Thermal conductivity of Narloy Z [W/m*K] 
-    mdot_LH2 = 13.2 # kg/s mass flow rate of the LH2 in the coolant channels. 
+    mdot_LH2 = 14.31 # kg/s mass flow rate of the LH2 in the coolant channels. 31.54 lb/s per Wang & Luong (1994)
     meltingpoint = 1000 # Melting point of inconel Z [K]
 
 
@@ -1707,11 +1705,41 @@ def main():
     keydata = [engine_info.A_c, engine_info.A_t, engine_info.A_e, engine_info.L_c, engine_info.gam, engine_info.Cp, dF_dx, dQ_dx] # Key data to pass to ODE solver
 
     dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, engine_info.M_c, engine_info.P_c, engine_info.T_c, keydata) # returns pressure, temperature, mach number throughout  entire engine at each x value (distance in m from injector) and step size in m
-    # dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, 0.2279, engine_info.P_c, engine_info.T_c, keydata) # returns pressure, temperature, mach number throughout  entire engine at each x value (distance in m from injector) and step size in m
+    dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, 0.2279, engine_info.P_c, engine_info.T_c, keydata) # returns pressure, temperature, mach number throughout  entire engine at each x value (distance in m from injector) and step size in m
+    
+    #++++++++++++++++++++++++++++++++++++++++++++
+    # SECTION 3
+    #++++++++++++++++++++++++++++++++++++++++++++
+    # Upgraded code for getting correct values which takes into account peaks and instability in the answer. 
+
+    # vale = np.arange(0.25, 0.27, 0.00001)
+    # potential_sol = []
+    # vale = [0.26397000000001397] 
+    # # Initial loop which will be used to calculate first heat transfer data
+    # for M_c_RS25 in vale:
+    #     # Assuming calc_flow_data function is defined elsewhere and returns the relevant values
+    #     dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, M_c_RS25, engine_info.P_c, engine_info.T_c, keydata)  # Corrected the function call with M_c_RS25
+    #     # Determine the largest delta
+    #     # Compute Mach from yp_m
+    #     mach = np.array([np.sqrt(yp[0]) for yp in yp_m])
+    #     peaks, _ = find_peaks(mach)  # tune prominence
+    #     # print("peaks", peaks, mach[peaks], val_diffs)
+    #     # print(M_c_RS25)
+
+    #     if (np.sqrt(yp_m[np.argmax([t[0] for t in yp_m])][0]) > 2.0) :  # If the maximum Mach number is greater than 1
+    #         index = np.argmax([t[0] for t in yp_m])  # Extract the index of largest value from the yp_m tuple array
+    #         # print("above Mach 1", M_c_RS25, index, "peaks:", mach[peaks], len(potential_sol))
+    #         if index > len(xp_m) - 30 and peaks.size == 0:  # Check if the index is within the last 30 values and no peaks
+    #             print(M_c_RS25, "POTENTIAL SOLUTION")
+    #             potential_sol.append(M_c_RS25)
+    
+    # print(potential_sol)
+    
+    
     # create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
     # create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
-
-
+    # create_plot([xp for xp in xp_m], [y[0] for y in yp_m], "Distance from Injector [m]", "Mach Number Squarred", "Mach Number vs Distance from Injector")
+    # plt.show()
 
     # displayEngineGeometry2(xp_m, A_c, A_t, A_e, L_c)
     
@@ -1768,9 +1796,7 @@ def main():
     # T_hw, T_cw = T
     T_cw_error = 100 # Initialize the error in the coolant temperature array
     T_hw_error = 100 # Initialize the error in the wall temperature array
-    # q_gas, heatflux = calc_q_gas(dx, x, y, T_hw, engine_info) # Calculate heat transfer from gas to wall
-    # q_h2, T_LH2, P_LH2, dF_dx_val, h_h2 = calc_q_h2(dx, x, y, s, T_cw, T_LH2, P_LH2, engine_info) # Calculate heat transfer through coolant channels
-    # q_wall = calc_q_wall(dx, x, y, T_hw, T_cw, engine_info) # Calculate heat transfer through the wall
+    relax = 0.8  # Under-relaxation factor for outer loop dQ/dF update
     iter = 0
     # print(f'q_gas {q_gas} [W] \n q_h2 = {q_h2} [W] \n q_wall = {q_wall} [W] \n at x = {x} [m] with T_hw = {T_hw} [K] with T_cw = {T_cw} [K] \n T_LH2_new = {T_LH2} [K] \n P_LH2_new = {P_LH2} [Pa] \n dF_dx_val = {dF_dx_val} [N/m]')
     while T_cw_error > 1 or T_hw_error > 1: # Run until the error in the coolant temperature array and wall temperature array is less than 0.1 K
@@ -1805,13 +1831,9 @@ def main():
             
             # Calculate dF_dx and dQ_dx based on the heat transfer through the coolant channels
             r = engine_info.get_radius(x)
-            dQ_dx[i] = (q_gas * engine_info.Ncc) / (mdot_chamber[0] * dx)
-            # gas_density = 
-            # Re_gas = (gas_density*np.sqrt(yp_m[0])*(2*r))/gas_viscosity 
-            # f_hotgas = calc_frictionFactor(Re_gas, 2*r, 30000, engine_info.e)
-
-            # dF_dx_val = f_hotgas*dx*yp_m[0]/(2*(2*r))
-            dF_dx[i] = dF
+            dQ_new = (q_gas * engine_info.Ncc) / (mdot_chamber[0] * dx)
+            dQ_dx[i] = relax * dQ_new + (1 - relax) * dQ_dx[i]
+            dF_dx[i] = relax * dF + (1 - relax) * dF_dx[i]
             s+=dx
             
 
@@ -1850,7 +1872,10 @@ def main():
         dx, xp_m, yp_m = calc_flow_data(xi, xf, dx, engine_info.M_c, engine_info.P_c, engine_info.T_c, keydata) # returns pressure, temperature, mach number throughout  entire engine at each x value (distance in m from injector) and step size in m
         iter += 1
 
-    # create_plot([x for x in xp_m], [T_LH2 for T_LH2 in reversed(T_LH2_array)], "Distance from Injector [m]", "T_LH2 [K]", "T_LH2 vs Distance from Injector")
+    T_LH2_reversed = list(reversed(T_LH2_array))
+    T_LH2_inlet = T_LH2_reversed[-1]  # Temperature at nozzle exit (coolant inlet)
+    x_throat_rel = [x - engine_info.L_c for x in xp_m]  # x relative to throat (negative = chamber side)
+    create_plot(x_throat_rel, [T - T_LH2_inlet for T in T_LH2_reversed], "Distance from Throat [m] (- = chamber)", "ΔT_LH2 [K]", "Coolant Temperature Rise vs Distance from Throat")
     # create_plot([x for x in xp_m], [P_LH2 for P_LH2 in reversed(P_LH2_array)], "Distance from Injector [m]", "P_LH2 [Pa]", "P_LH2vs Distance from Injector")
     # create_plot([x for x in xp_m], [h_H2 for h_H2 in reversed(h_H2_array)], "Distance from Injector [m]", "T_cw [K]", "h_cold vs x Distance from Injector")
     # create_plot([x for x in xp_m], [therm_LH2 for therm_LH2 in reversed(therm_LH2_array)], "Distance from Injector [m]", "Thermal Conductivity [W/mK]", "Thermal Conductivity vs Distance from Injector")
