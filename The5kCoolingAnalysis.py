@@ -8,8 +8,8 @@ from adjustText import adjust_text
 from CoolProp.CoolProp import PropsSI
 import CoolProp.CoolProp as CP
 import cantera as ct
-from HydrogenModelV2 import hydrogen_thermodynamics
-from HydrogenModelV2 import para_fraction
+from Archive.HydrogenModelV2 import hydrogen_thermodynamics
+from Archive.HydrogenModelV2 import para_fraction
 import ezdxf
 
 # from ctREFPROP.ctREFPROP import REFPROPFunctionLibrary

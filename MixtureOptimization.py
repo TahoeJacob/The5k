@@ -7,8 +7,8 @@ from scipy.signal import find_peaks
 from adjustText import adjust_text
 from CoolProp.CoolProp import PropsSI
 import cantera as ct
-from HydrogenModelV2 import hydrogen_thermodynamics
-from HydrogenModelV2 import para_fraction
+from Archive.HydrogenModelV2 import hydrogen_thermodynamics
+from Archive.HydrogenModelV2 import para_fraction
 
 # Import formatted data in excel format. Use this to complete data analaysis
  
@@ -337,7 +337,6 @@ def calc_radius(x, A_c, A_t, A_e, L_c):
     return r*0.0254 # Convert to meters and return
     
   
-
 # Function to calculate the central finite difference
 def central_finite_difference(func, x, h, *args):
     # Inputs:
