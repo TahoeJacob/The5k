@@ -60,37 +60,45 @@ config = EngineConfig(
 
     # Channels
     N_channels = 36,
-    dx         = 1e-3,
+    dx         = 6e-3,
+
+    # Film Cooling 
+    film_fraction  = 0.00,   # 5% of fuel flow as film
+    film_inject_x  = 0.0,    # inject at injector face
+    film_coolant   = "RP1",
+    film_T_inlet   = 400.0,
+    film_Kt        = 0.0013, # turbulent mixing intensity (Vasiliev 1993, range 0.0005-0.002)
+
 )
 
 # =============================================================================
 # RS25 ENGINE CONFIG — Same config as MixtureOptimazation.py Output aligns relatively with Betti/Wang/CryoRocket.com
 # =============================================================================
-# config = EngineConfig(
-#     fuel="LH2", oxidizer="LOX", coolant="Hydrogen",
-#     P_c=18.23E6,
-#     F_vac=2184076.8131,        # N (100% RPL)
-#     OF=6.0,
-#     exp_ratio=69.5,
-#     cont_ratio=2.699,       # A_c/A_t = (R_c/R_t)^2 = (8.9416/5.4416)^2
-#     L_star=0.914,           # 36 inches — RS25 LH2/LOX
-#     theta1=25.4167,         # Hardware convergence half-angle [deg]
-#     thetaD=37.0,
-#     thetaE=5.3738,
-#     R1_mult=0.3196,         # R_1/R_t = 1.73921/5.4416 (hardware, dimensionless)
-#     RU_mult=0.9469,         # R_U/R_t = 5.1527/5.4416
-#     RD_mult=0.3711,         # R_D/R_t = 2.019/5.4416
-#     wall_k=316.0,           # Copper alloy (NARloy-Z) — matches MixtureOptimization.py
-#     wall_roughness=2.5e-7,  # Milled / electroformed
-#     wall_melt_T=1356.0,     # Cu melting point [K]
-#     T_coolant_inlet=52.0,   # Coolant Inlet [K]
-#     P_coolant_inlet=44.82e6,# Coolant Inlet Pressure [Pa] — 4.482e7 per Wang & Luong
-#     mdot_coolant=14.31,     # [kg/s] STMCC circuit only: 31.54 lb/s per Wang & Luong (1994)
-#                             # RS25 splits total LH2 flow — only ~21% goes through STMCC channels
-#     N_channels=390,
-#     dx=1e-3,                # Step size for 1-D analysis [m]
+config = EngineConfig(
+    fuel="LH2", oxidizer="LOX", coolant="Hydrogen",
+    P_c=18.23E6,
+    F_vac=2184076.8131,        # N (100% RPL)
+    OF=6.0,
+    exp_ratio=69.5,
+    cont_ratio=2.699,       # A_c/A_t = (R_c/R_t)^2 = (8.9416/5.4416)^2
+    L_star=0.914,           # 36 inches — RS25 LH2/LOX
+    theta1=25.4167,         # Hardware convergence half-angle [deg]
+    thetaD=37.0,
+    thetaE=5.3738,
+    R1_mult=0.3196,         # R_1/R_t = 1.73921/5.4416 (hardware, dimensionless)
+    RU_mult=0.9469,         # R_U/R_t = 5.1527/5.4416
+    RD_mult=0.3711,         # R_D/R_t = 2.019/5.4416
+    wall_k=316.0,           # Copper alloy (NARloy-Z) — matches MixtureOptimization.py
+    wall_roughness=2.5e-7,  # Milled / electroformed
+    wall_melt_T=1356.0,     # Cu melting point [K]
+    T_coolant_inlet=52.0,   # Coolant Inlet [K]
+    P_coolant_inlet=44.82e6,# Coolant Inlet Pressure [Pa] — 4.482e7 per Wang & Luong
+    mdot_coolant=14.31,     # [kg/s] STMCC circuit only: 31.54 lb/s per Wang & Luong (1994)
+                            # RS25 splits total LH2 flow — only ~21% goes through STMCC channels
+    N_channels=390,
+    dx=1e-3,                # Step size for 1-D analysis [m]
 
-# )
+)
 
 
 # =============================================================================
@@ -136,13 +144,13 @@ def run():
  
     chan_geom = ChannelGeometry(x_j, chan_w, chan_h, chan_t, chan_land,)
 
-    # chan_geom = ChannelGeometry(
-    #     x_j       = np.array([0.0, 0.0127, 0.0315, 0.0508, 0.0762, 0.1016, 0.127, 0.1524, 0.1778, 0.2032, 0.2286, 0.254, 0.2667, 0.2794, 0.2921, 0.3048, 0.3175, 0.32512, 0.3302, 0.3429, 0.3556, 0.381, 0.4064, 0.4318, 0.4572, 0.4826, 0.508, 0.5334, 0.5588, 0.6027,]),
-    #     chan_w    = np.array([0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001509, 0.001217, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001227, 0.001575, 0.001575, 0.001575,]),   # 1.5 mm channel width
-    #     chan_h    = np.array([0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.003442, 0.004953, 0.004953, 0.004953, 0.004953, 0.005352, 0.006096, 0.006096, 0.006096,]),   # 3.0 mm channel height
-    #     chan_t    = np.array([0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000889, 0.000889,]),   # 0.8 mm wall thickness
-    #     chan_land = np.array([0.002068, 0.002068, 0.002068, 0.002068, 0.002068, 0.002045, 0.001976, 0.001857, 0.001748, 0.001844, 0.001847, 0.001653, 0.001562, 0.001463, 0.001361, 0.001275, 0.001196, 0.001261, 0.001143, 0.001113, 0.001105, 0.001209, 0.001516, 0.001603, 0.001554, 0.001844, 0.002131, 0.002405, 0.002685, 0.003155,]),   # 1.0 mm land width
-    # )
+    chan_geom = ChannelGeometry(
+        x_j       = np.array([0.0, 0.0127, 0.0315, 0.0508, 0.0762, 0.1016, 0.127, 0.1524, 0.1778, 0.2032, 0.2286, 0.254, 0.2667, 0.2794, 0.2921, 0.3048, 0.3175, 0.32512, 0.3302, 0.3429, 0.3556, 0.381, 0.4064, 0.4318, 0.4572, 0.4826, 0.508, 0.5334, 0.5588, 0.6027,]),
+        chan_w    = np.array([0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001509, 0.001217, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001227, 0.001575, 0.001575, 0.001575,]),   # 1.5 mm channel width
+        chan_h    = np.array([0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.003442, 0.004953, 0.004953, 0.004953, 0.004953, 0.005352, 0.006096, 0.006096, 0.006096,]),   # 3.0 mm channel height
+        chan_t    = np.array([0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000889, 0.000889,]),   # 0.8 mm wall thickness
+        chan_land = np.array([0.002068, 0.002068, 0.002068, 0.002068, 0.002068, 0.002045, 0.001976, 0.001857, 0.001748, 0.001844, 0.001847, 0.001653, 0.001562, 0.001463, 0.001361, 0.001275, 0.001196, 0.001261, 0.001143, 0.001113, 0.001105, 0.001209, 0.001516, 0.001603, 0.001554, 0.001844, 0.002131, 0.002405, 0.002685, 0.003155,]),   # 1.0 mm land width
+    )
 
 
     # --- Step 3: Adiabatic flow solution (isentropic first pass) ---
@@ -155,6 +163,21 @@ def run():
     # --- Step 5: Thermal analysis ---
     thermal = solve_thermal(flow, geom, cea_result, chan_geom, config,
                             T_aw_eff=T_aw_eff if config.film_fraction > 0.0 else None)
+
+    # --- Step 5b: Iterate film temp if using regen exit as injection ---
+    if config.film_fraction > 0.0 and config.film_T_from_regen:
+        for film_iter in range(5):
+            T_regen_exit = float(thermal.T_coolant[0])   # index 0 = injector face
+            if abs(T_regen_exit - config.film_T_inlet) < 1.0:
+                print(f"  Film T_inlet converged at {T_regen_exit:.1f} K "
+                      f"(iter {film_iter + 1})")
+                break
+            print(f"\n--- Film iteration {film_iter + 1}: "
+                  f"T_film_inlet {config.film_T_inlet:.1f} → {T_regen_exit:.1f} K ---")
+            config.film_T_inlet = T_regen_exit
+            T_aw_eff = compute_film_taw(flow, geom, cea_result, config)
+            thermal = solve_thermal(flow, geom, cea_result, chan_geom, config,
+                                    T_aw_eff=T_aw_eff)
 
     plot_thermal(thermal, geom, config)
 

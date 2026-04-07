@@ -1,55 +1,54 @@
 """
 film_cooling.py
-Liquid + gaseous film cooling model.
-
-Physics (following EUCASS2023-035, Barredo Juan & López Platero, and
-NASA SP-8124 Appendix B):
+Liquid + gaseous film cooling model following the RPA thermal analysis
+methodology (Ponomarenko 2012) and Vasiliev & Kudryavtsev (1993).
 
 Phase 1 — Liquid heating  (x_inject → x_sat)
-    Film enters at T_film_inlet, is heated by gas convection.
-    Heat flux to film:  q_film = h_film * (T_aw - T_film)
-    Film heats up:      dT_film/dx = 2π·r·q_film / (m_film·Cp_film)
-    Wall sees T_aw_eff = T_film  (gas cannot heat wall through liquid film)
+    Film enters at T_film_inlet, heated by gas-side convection (Bartz HTC).
+    Includes film stability coefficient η(Re_f) per RPA Figure 2 / [1].
+    Heating:  dTf = 2π·R·q / (η_stab · ṁf · c̄f) · dx
+    Wall sees T_aw_eff = T_film
 
 Phase 2 — Vaporisation  (x_sat → x_vap)
-    Film temperature locked at T_sat.
-    Evaporation rate:   dm_film/dx = -2π·r·q_film / L_lv
+    Film locked at T_sat, gas heat evaporates liquid.
+    Rate:  dṁf = 2π·R·q / Q_vap · dx
     Wall sees T_aw_eff = T_sat
 
-Phase 3 — Gaseous film  (x_vap → x_end)
-    Vapour mixes with free-stream boundary layer.
-    Film cooling efficiency η decays with distance via NASA Appendix B mixing:
-        η(x) = 1 / (θ · (1 + W_E/W_e))
-    Simplified here as exponential decay calibrated against typical K_t=0.001:
-        η(x) = exp(-K_mix · (s/r_local))   where s = x - x_vap
-    Modified adiabatic wall temperature (EUCASS Eq. 31):
-        T_aw_eff = [H_aw - η·H_c,v + η·Cp_v·T_if + (1-η)·(Cp_s·T0g - h_g)]
-                   / [η·Cp_v + (1-η)·Cp_s]
-    Simplified (ideal gas, no dissociation):
-        T_aw_eff = η · T_vap_partial + (1-η) · T_aw_gas
+Phase 3 — Gaseous film mixing  (x_vap → x_end)
+    Vasiliev-Kudryavtsev (1993) turbulent mixing model [1]:
+        ξ = 1 - exp(-M · s / Hs)
+        M = Kt · m̄s / m̄f
+    where:
+        Kt   = turbulent mixing intensity, (0.05–0.20)×10⁻²  [1]
+        m̄s  = surface layer relative mass flow (≈ 1 for small film fractions)
+        m̄f  = film relative mass flow = ṁ_film / ṁ_total
+        Hs   = surface layer thickness ≈ turbulent BL thickness
+             = 0.37 · x / Re_x^0.2   (flat-plate turbulent BL estimate)
 
-When film is exhausted or never injected, T_aw_eff = T_aw_gas (no correction).
+    Film effectiveness η = 1 - ξ = exp(-M · s / Hs)
+    T_aw_eff = η · T_sat + (1-η) · T_aw_bare
 
-Film HTC — Grisson (1966) correlation for annular liquid film:
-    h_film = 0.025 · (k_l/D) · Re_film^0.8 · Pr_l^0.4
-    Re_film = 4 · m_film / (2π·r · μ_l)    (film Reynolds based on perimeter)
+    The 1/m̄f scaling in M is the key physics: more film mass → lower M
+    → slower mixing → longer protection.  No curve-fitting required.
+
+References
+----------
+[1] Vasiliev A.P., Kudryavtsev V.M. et al. "Basics of theory and analysis
+    of liquid-propellant rocket engines", vol.2, 4th Ed., Moscow, 1993.
+[2] Ponomarenko A. "RPA: Thermal Analysis of Thrust Chambers", June 2012.
 
 Entry point
 -----------
     compute_film_taw(flow, geom, cea, config) → np.ndarray  shape (n,)
-    Returns T_aw_eff at every axial station in flow.x order.
-    Stations with no film protection return the bare Bartz T_aw.
 """
 
 import numpy as np
-from dataclasses import dataclass
-from typing import Optional
 
 from flow_solver import FlowSolution
 from geometry import EngineGeometry, nozzle_radius
 from cea_interface import CEAResult
 from config import EngineConfig
-from coolant_props import get_coolant_props
+from heat_transfer import _bartz_h
 
 
 # ---------------------------------------------------------------------------
@@ -64,25 +63,65 @@ def _T_aw_bare(M: float, cea: CEAResult) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Grisson (1966) film HTC
+# Film stability coefficient η(Re_f) — RPA Figure 2 / Vasiliev [1]
 # ---------------------------------------------------------------------------
-def _grisson_h_film(m_film: float, r_wall: float,
-                    props_l) -> float:
+def _film_stability(mdot_film: float, r_wall: float, mu_film: float) -> float:
     """
-    Liquid film HTC [W/(m²·K)] via Grisson (1966).
+    Film stability coefficient η from RPA Figure 2.
 
-    h = 0.025 · (k_l / D) · Re_film^0.8 · Pr_l^0.4
+    Accounts for film breakup at low Reynolds numbers — a thin, slow film
+    is less stable and absorbs heat less effectively.
 
-    where Re_film = 4·m_film / (circumference · μ_l)
-    and D = 2·r_wall (hydraulic diameter ≈ 2× wall radius for thin film).
+    Re_f = ṁ_film / (2π·R · μ_film)
+
+    Fit to Figure 2:
+        η ≈ 0.4 + 0.4·(1 - exp(-Re_f/1500))
+        Range: 0.4 (laminar, unstable) → 0.8 (turbulent, stable)
     """
-    circ   = 2.0 * np.pi * r_wall
-    D      = 2.0 * r_wall
-    Re_f   = 4.0 * m_film / (circ * props_l.viscosity)
-    Pr_f   = props_l.viscosity * props_l.Cp / props_l.conductivity
-    Re_f   = max(Re_f, 1.0)
-    h_film = 0.025 * (props_l.conductivity / D) * Re_f**0.8 * Pr_f**0.4
-    return float(h_film)
+    circ = 2.0 * np.pi * r_wall
+    Re_f = mdot_film / (circ * mu_film)
+    Re_f = max(Re_f, 1.0)
+    return 0.4 + 0.4 * (1.0 - np.exp(-Re_f / 1500.0))
+
+
+# ---------------------------------------------------------------------------
+# Turbulent BL thickness estimate
+# ---------------------------------------------------------------------------
+def _bl_thickness(x: float, cea: CEAResult, M_local: float) -> float:
+    """
+    Estimate turbulent boundary layer thickness at axial station x [m].
+
+    Uses flat-plate turbulent BL:  δ = 0.37 · x / Re_x^0.2
+
+    Local gas properties estimated from isentropic relations + CEA chamber
+    conditions.
+    """
+    if x <= 0.0:
+        return 1e-6
+
+    gam   = cea.gamma_c
+    R_sp  = cea.R_specific
+    T_c   = cea.T_c
+    P_c   = cea.P_c
+    mu_c  = cea.visc_c
+
+    # Local isentropic conditions
+    fac     = 1.0 + (gam - 1.0) / 2.0 * M_local**2
+    T_local = T_c / fac
+    P_local = P_c * fac**(- gam / (gam - 1.0))
+    rho     = P_local / (R_sp * T_local)
+    a_local = np.sqrt(gam * R_sp * T_local)
+    v_local = M_local * a_local
+
+    # Viscosity: Sutherland-like scaling from chamber value
+    # μ ∝ T^0.7 (approximate for combustion gases)
+    mu_local = mu_c * (T_local / T_c)**0.7
+
+    Re_x = rho * v_local * x / mu_local
+    Re_x = max(Re_x, 1.0)
+
+    Hs = 0.37 * x / Re_x**0.2
+    return max(Hs, 1e-6)
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +134,10 @@ def compute_film_taw(flow:   FlowSolution,
     """
     Compute effective adiabatic wall temperature T_aw_eff [K] at every
     axial station, accounting for liquid + gaseous film cooling.
+
+    Implements the RPA thermal analysis film cooling model:
+    - Liquid phases (heating + vaporisation) per Ponomarenko 2012 p.10
+    - Gaseous mixing per Vasiliev & Kudryavtsev 1993, as in RPA p.8-9
 
     Parameters
     ----------
@@ -119,7 +162,7 @@ def compute_film_taw(flow:   FlowSolution,
     if config.film_fraction <= 0.0:
         return T_aw_eff
 
-    # Film mass flow [kg/s] — fraction of total fuel flow
+    # Film mass flow [kg/s] — fraction of coolant flow
     mdot_film = config.film_fraction * (config.mdot_coolant or 0.0)
     if mdot_film <= 0.0:
         return T_aw_eff
@@ -132,21 +175,33 @@ def compute_film_taw(flow:   FlowSolution,
     i_start = int(np.searchsorted(flow.x, x_inject))
     i_start = min(i_start, n - 1)
 
-    # Get saturation temperature at chamber pressure
-    # (approximate: use inlet pressure as representative; film is thin)
+    # Saturation properties at chamber pressure
     T_sat = _get_T_sat(fluid, config.P_coolant_inlet)
     L_lv  = _get_L_lv(fluid, T_sat, config.P_coolant_inlet)
 
     T_film   = float(T_film_inlet)
     m_film   = float(mdot_film)
-    phase    = "liquid"   # "liquid" → "vapour" → "gaseous" → "spent"
-    x_vap    = None       # x at which vaporisation completes
+    phase    = "liquid"
+    x_vap    = None
+
+    # Gaseous mixing parameters (Vasiliev-Kudryavtsev model)
+    Kt      = config.film_Kt                    # turbulent mixing intensity
+    m_bar_f = mdot_film / geom.mdot              # film relative mass flow
+    m_bar_s = 1.0 - m_bar_f                      # surface layer ≈ rest of flow
+
+    # Approximate liquid film viscosity for stability coefficient
+    mu_film_liq = 3.0e-4   # RP-1 at ~400K [Pa·s] (order-of-magnitude)
+
+    # Approximate liquid Cp
+    Cp_film = 2100.0   # RP-1 [J/(kg·K)]
 
     print(f"\n--- Film Cooling ---")
     print(f"  mdot_film = {mdot_film*1000:.2f} g/s  "
           f"({config.film_fraction*100:.1f}% of coolant)")
     print(f"  Injection at x = {x_inject*1000:.1f} mm  "
           f"T_inlet = {T_film_inlet:.1f} K  T_sat = {T_sat:.1f} K")
+    print(f"  Kt = {Kt:.4f}  m̄f = {m_bar_f:.4f}  "
+          f"M = Kt·m̄s/m̄f = {Kt * m_bar_s / m_bar_f:.2f}")
 
     for i in range(i_start, n):
         x   = float(flow.x[i])
@@ -155,21 +210,25 @@ def compute_film_taw(flow:   FlowSolution,
         T_aw_i = T_aw_gas[i]
 
         if phase == "spent":
-            # No film — bare T_aw already set
             break
 
         if phase == "liquid":
-            props = get_coolant_props(T_film, config.P_coolant_inlet, fluid)
-            h_f   = _grisson_h_film(m_film, r, props)
-            q_f   = h_f * (T_aw_i - T_film)
-            q_f   = max(q_f, 0.0)
+            # --- Phase 1: Liquid heating (RPA p.10) ---
+            # Bartz HTC drives heat into film (dominant thermal resistance)
+            A   = float(flow.A[i])
+            h_g = _bartz_h(M, A, T_film, cea, geom)
+            q_f = h_g * (T_aw_i - T_film)
+            q_f = max(q_f, 0.0)
 
-            # Wall sees film temperature, not T_aw
+            # Wall sees film temperature
             T_aw_eff[i] = T_film
 
-            # Heat film
+            # Film stability coefficient η (RPA Figure 2)
+            eta_stab = _film_stability(m_film, r, mu_film_liq)
+
+            # Heat film:  dTf = 2πR·q / (η·ṁf·Cp) · dx
             circ       = 2.0 * np.pi * r
-            dT_film_dx = circ * q_f / (m_film * props.Cp)
+            dT_film_dx = circ * q_f / (eta_stab * m_film * Cp_film)
             T_film    += dT_film_dx * dx
 
             if T_film >= T_sat:
@@ -177,18 +236,19 @@ def compute_film_taw(flow:   FlowSolution,
                 phase  = "vapour"
 
         elif phase == "vapour":
-            props = get_coolant_props(T_sat, config.P_coolant_inlet, fluid)
-            h_f   = _grisson_h_film(m_film, r, props)
-            q_f   = h_f * (T_aw_i - T_sat)
-            q_f   = max(q_f, 0.0)
+            # --- Phase 2: Vaporisation (RPA p.11) ---
+            A   = float(flow.A[i])
+            h_g = _bartz_h(M, A, T_sat, cea, geom)
+            q_f = h_g * (T_aw_i - T_sat)
+            q_f = max(q_f, 0.0)
 
             T_aw_eff[i] = T_sat
 
-            # Evaporate film
-            circ        = 2.0 * np.pi * r
-            dm_film_dx  = -circ * q_f / L_lv
-            m_film     += dm_film_dx * dx
-            m_film      = max(m_film, 0.0)
+            # Evaporate:  dṁf = 2πR·q / Q_vap · dx
+            circ       = 2.0 * np.pi * r
+            dm_film_dx = -circ * q_f / L_lv
+            m_film    += dm_film_dx * dx
+            m_film     = max(m_film, 0.0)
 
             if m_film <= 0.0:
                 x_vap = x
@@ -196,16 +256,25 @@ def compute_film_taw(flow:   FlowSolution,
                 print(f"  Film fully vaporised at x = {x*1000:.1f} mm")
 
         elif phase == "gaseous":
-            # Exponential decay of film efficiency with axial distance
-            # K_mix calibrated to typical turbulent mixing rate from
-            # Vasiliev & Kudryavtsev (1993) K_t = 0.001
-            s     = x - x_vap
-            K_mix = config.film_K_mix
-            eta   = np.exp(-K_mix * s / max(r, 1e-6))
+            # --- Phase 3: Gaseous mixing (RPA p.8-9) ---
+            # Vasiliev-Kudryavtsev (1993) turbulent mixing model:
+            #
+            #   ξ = 1 - exp(-M · s / Hs)
+            #   M = Kt · m̄s / m̄f
+            #   Hs = turbulent BL thickness at station x
+            #
+            # Film effectiveness η = 1 - ξ
+            # More film → larger m̄f → smaller M → slower mixing
+
+            s  = x - x_vap
+            Hs = _bl_thickness(x, cea, M)
+
+            M_mix = Kt * m_bar_s / m_bar_f
+            xi    = 1.0 - np.exp(-M_mix * s / Hs)
+            eta   = 1.0 - xi   # = exp(-M_mix · s / Hs)
             eta   = float(np.clip(eta, 0.0, 1.0))
 
-            # Modified T_aw: blend between vapour injection temp and bare T_aw
-            # Simplified from EUCASS Eq. 31 for ideal gas (no dissociation)
+            # Modified adiabatic wall temperature
             T_aw_eff[i] = eta * T_sat + (1.0 - eta) * T_aw_i
 
             if eta < 0.01:
@@ -213,8 +282,7 @@ def compute_film_taw(flow:   FlowSolution,
                 print(f"  Gaseous film spent (η<1%) at x = {x*1000:.1f} mm")
 
     # Summary
-    i_end_film = np.searchsorted(flow.x, x_inject + 1e-9)
-    reduction  = np.mean(T_aw_gas[i_start:] - T_aw_eff[i_start:])
+    reduction = np.mean(T_aw_gas[i_start:] - T_aw_eff[i_start:])
     print(f"  Mean T_aw reduction (film zone): {reduction:.1f} K")
     print(f"  Phase at exit: {phase}")
 
@@ -230,7 +298,6 @@ def _get_T_sat(fluid: str, P: float) -> float:
         import CoolProp.CoolProp as CP
         return float(CP.PropsSI('T', 'P', P, 'Q', 0, fluid))
     except Exception:
-        # Fallback: approximate T_sat for RP-1 at ~20 bar ≈ 490 K
         _fallback = {"RP1": 490.0, "Methane": 180.0, "Hydrogen": 25.0}
         return _fallback.get(fluid, 400.0)
 
