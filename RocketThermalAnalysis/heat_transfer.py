@@ -204,9 +204,16 @@ def _T_aw(M: float, cea: CEAResult) -> float:
 
 def _gas_heat(x: float, M: float, A: float, T_hw: float, dx: float,
               chan_geom: ChannelGeometry,
-              cea: CEAResult, geom: EngineGeometry):
+              cea: CEAResult, geom: EngineGeometry,
+              T_aw_eff: float = None):
     """
     Gas-side heat quantities at axial station x.
+
+    Parameters
+    ----------
+    T_aw_eff : float, optional
+        Effective adiabatic wall temperature from film cooling model [K].
+        If None, the bare Bartz T_aw is used.
 
     Returns
     -------
@@ -216,7 +223,7 @@ def _gas_heat(x: float, M: float, A: float, T_hw: float, dx: float,
     """
     chan_w, _, _, chan_land = chan_geom.at(x)
     h_g    = _bartz_h(M, A, T_hw, cea, geom)
-    T_aw_v = _T_aw(M, cea)
+    T_aw_v = T_aw_eff if T_aw_eff is not None else _T_aw(M, cea)
 
     heatflux = h_g * (T_aw_v - T_hw)
     q_gas    = heatflux * (chan_w + chan_land) * dx
@@ -390,7 +397,8 @@ def _newton_solve(x: float, M: float, A: float,
                   cea: CEAResult, geom: EngineGeometry,
                   config: EngineConfig, mdot_per_ch: float,
                   T_hw0: float, T_cw0: float,
-                  tol: float = 0.1, max_iter: int = 50):
+                  tol: float = 0.1, max_iter: int = 50,
+                  T_aw_eff: float = None):
     """
     Newton-Raphson solve for (T_hw, T_cw) satisfying the thermal circuit:
 
@@ -408,7 +416,8 @@ def _newton_solve(x: float, M: float, A: float,
 
     def F(T_vec):
         T_hw, T_cw = float(T_vec[0]), float(T_vec[1])
-        q_g, *_  = _gas_heat(x, M, A, T_hw, dx, chan_geom, cea, geom)
+        q_g, *_  = _gas_heat(x, M, A, T_hw, dx, chan_geom, cea, geom,
+                              T_aw_eff=T_aw_eff)
         q_w      = _q_wall(T_hw, T_cw, chan_w, chan_land, chan_t, dx, config.wall_k)
         q_c, *_  = _coolant_heat(x, T_cw, T_cool, P_cool, s, dx,
                                   chan_geom, geom, config, mdot_per_ch)
@@ -452,7 +461,8 @@ def solve_thermal(flow: FlowSolution,
                   T_cw_init: float = 400.0,
                   tol_K: float = 1.0,
                   relax: float = 0.8,
-                  max_outer: int = 30) -> ThermalSolution:
+                  max_outer: int = 30,
+                  T_aw_eff: np.ndarray = None) -> ThermalSolution:
     """
     Coupled 1-D regenerative cooling thermal analysis.
 
@@ -504,12 +514,19 @@ def solve_thermal(flow: FlowSolution,
     rho_arr    = np.zeros(n)
 
     n_iters = 0
+
+    # Build T_aw_eff lookup — None means bare Bartz T_aw used at each station
+    _T_aw_eff_arr = T_aw_eff  # may be None (no film) or np.ndarray (film active)
+
+    film_active = (_T_aw_eff_arr is not None)
     print(f"\n--- Thermal Solver ---")
     print(f"  Fluid: {config.coolant}  "
           f"N_ch: {config.N_channels}  "
           f"mdot/ch: {mdot_per_ch*1000:.2f} g/s  "
           f"T_in: {config.T_coolant_inlet:.0f} K  "
           f"P_in: {config.P_coolant_inlet/1e5:.1f} bar")
+    if film_active:
+        print(f"  Film cooling ACTIVE — T_aw_eff supplied ({config.film_fraction*100:.1f}% film)")
 
     for outer in range(max_outer):
         T_hw_prev = T_hw_arr.copy()
@@ -529,20 +546,22 @@ def solve_thermal(flow: FlowSolution,
             M = float(flow.M[k])
             A = float(flow.A[k])
 
-            # print(f"x {x}, M {M}, A {A}, T_cool {T_cool}, P_cool {P_cool}, s {s}, dx {dx}, T_hw {T_hw_nwt}, T_cw {T_cw_nwt}")
-
+            # Film-corrected T_aw for this station (None = use bare Bartz)
+            T_aw_k = float(_T_aw_eff_arr[k]) if film_active else None
 
             T_hw_nwt, T_cw_nwt = _newton_solve(
                 x, M, A, T_cool, P_cool, s, dx,
                 chan_geom, cea, geom, config, mdot_per_ch,
-                T_hw_nwt, T_cw_nwt)
+                T_hw_nwt, T_cw_nwt,
+                T_aw_eff=T_aw_k)
 
             # Under-relaxation
             T_hw_arr[k] = relax * T_hw_nwt + (1.0 - relax) * T_hw_prev[k]
             T_cw_arr[k] = relax * T_cw_nwt + (1.0 - relax) * T_cw_prev[k]
 
             # Final evaluation with relaxed wall temperatures for result storage
-            q_g, hf, h_g = _gas_heat(x, M, A, T_hw_arr[k], dx, chan_geom, cea, geom)
+            q_g, hf, h_g = _gas_heat(x, M, A, T_hw_arr[k], dx, chan_geom, cea, geom,
+                                      T_aw_eff=T_aw_k)
             (q_c, T_cool_new, P_cool_new,
              h_c, Re, Nu, Dh, v, rho) = _coolant_heat(
                 x, T_cw_arr[k], T_cool, P_cool, s, dx,

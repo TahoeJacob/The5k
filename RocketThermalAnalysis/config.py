@@ -72,3 +72,13 @@ class EngineConfig:
     # -----------------------------------------------------------------------
     N_channels: int = 36
     dx: float = 1e-3     # Axial integration step [m]
+
+    # -----------------------------------------------------------------------
+    # Film cooling  (set film_fraction > 0 to enable)
+    # -----------------------------------------------------------------------
+    film_fraction:  float = 0.0     # Film flow as fraction of mdot_coolant
+    film_inject_x:  float = 0.0     # Injection axial location [m] (0 = injector face)
+    film_coolant:   str   = "RP1"   # CoolProp name of film fluid
+    film_T_inlet:   float = 290.0   # Film injection temperature [K]
+    film_K_mix:     float = 0.03    # Gaseous decay rate constant (higher = faster decay)
+                                    # Typical range 0.02–0.06 from Vasiliev & Kudryavtsev

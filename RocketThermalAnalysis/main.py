@@ -12,6 +12,7 @@ from cea_interface import get_cea_for_analysis
 from geometry import size_engine, plot_contour, nozzle_radius
 from flow_solver import solve_flow
 from heat_transfer import ChannelGeometry, solve_thermal, plot_thermal
+from film_cooling import compute_film_taw
 
 
 # =============================================================================
@@ -146,10 +147,14 @@ def run():
 
     # --- Step 3: Adiabatic flow solution (isentropic first pass) ---
     # Limit to the axial range covered by the cooling channel geometry
-    flow = solve_flow(geom, cea_result, config, xf=chan_geom.x_j[-1]) 
+    flow = solve_flow(geom, cea_result, config, xf=chan_geom.x_j[-1])
 
-    # --- Step 4: Thermal analysis ---
-    thermal = solve_thermal(flow, geom, cea_result, chan_geom, config)
+    # --- Step 4: Film cooling T_aw correction (if configured) ---
+    T_aw_eff = compute_film_taw(flow, geom, cea_result, config)
+
+    # --- Step 5: Thermal analysis ---
+    thermal = solve_thermal(flow, geom, cea_result, chan_geom, config,
+                            T_aw_eff=T_aw_eff if config.film_fraction > 0.0 else None)
 
     plot_thermal(thermal, geom, config)
 
