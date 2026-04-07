@@ -1713,7 +1713,7 @@ def main():
 
     # vale = np.arange(0.25, 0.27, 0.00001)
     # potential_sol = []
-    # vale = [0.26397000000001397] 
+    # # vale = [0.26397000000001397] 
     # # Initial loop which will be used to calculate first heat transfer data
     # for M_c_RS25 in vale:
     #     # Assuming calc_flow_data function is defined elsewhere and returns the relevant values
@@ -1735,10 +1735,10 @@ def main():
     # print(potential_sol)
     
     
-    # create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
-    # create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
-    # create_plot([xp for xp in xp_m], [y[0] for y in yp_m], "Distance from Injector [m]", "Mach Number Squarred", "Mach Number vs Distance from Injector")
-    # plt.show()
+    create_plot([xp for xp in xp_m], [y[1] for y in yp_m], "Distance from Injector [m]", "Pressure [Pa]", "Pressure vs Distance from Injector")
+    create_plot([xp for xp in xp_m], [y[2] for y in yp_m], "Distance from Injector [m]", "Temperature [K]", "Temperature vs Distance from Injector")
+    create_plot([xp for xp in xp_m], [y[0] for y in yp_m], "Distance from Injector [m]", "Mach Number Squarred", "Mach Number vs Distance from Injector")
+    plt.show()
 
     # displayEngineGeometry2(xp_m, A_c, A_t, A_e, L_c)
     

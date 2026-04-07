@@ -1,0 +1,140 @@
+"""
+main.py
+Top-level entry point. Edit the EngineConfig below to define your engine,
+then run:  python main.py
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+from config import EngineConfig
+from cea_interface import get_cea_for_analysis
+from geometry import size_engine, plot_contour
+from flow_solver import solve_flow
+from heat_transfer import ChannelGeometry, solve_thermal, plot_thermal
+
+
+# =============================================================================
+# ENGINE CONFIG — edit this section
+# =============================================================================
+# config = EngineConfig(
+#     # Propellants
+#     fuel        = "RP-1",
+#     oxidizer    = "LOX",
+#     coolant     = "RP1",        # CoolProp name (used later by coolant_props)
+
+#     # Performance
+#     P_c   = 60.0e5,             # 60 bar [Pa]
+#     F_vac = 5500.0,             # [N]
+
+#     # O/F — uncomment / set both for sweep + analysis
+#     OF        = 2.4,
+#     OF_sweep  = (1.5, 3.5, 0.1),
+
+#     # CEA
+#     frozen = False,
+
+#     # Geometry
+#     exp_ratio   = 5.0,
+#     cont_ratio  = 6.0,
+#     L_star      = 1.143,        # 45 inch — typical RP-1/LOX
+
+#     # Nozzle contour
+#     theta1  = 30.0,
+#     thetaD  = 30.0,
+#     thetaE  = 12.0,
+#     R1_mult = 1.5,
+#     RU_mult = 1.5,
+#     RD_mult = 0.382,
+
+#     # Wall material (6061-T6 Al)
+#     wall_k         = 167.0,
+#     wall_roughness = 6.3e-6,
+#     wall_melt_T    = 855.0,
+
+#     # Coolant inlet (counter-current from nozzle exit)
+#     T_coolant_inlet = 290.0,    # [K]
+#     P_coolant_inlet = 80.0e5,   # [Pa]
+#     mdot_coolant    = None,     # computed from OF + mdot_total
+
+#     # Channels
+#     N_channels = 36,
+#     dx         = 1e-3,
+# )
+
+
+config = EngineConfig(
+    fuel="LH2", oxidizer="LOX", coolant="Hydrogen",
+    P_c=18.23E6,
+    F_vac=2184076.8131,        # N (100% RPL)
+    OF=6.0,
+    exp_ratio=69.5,
+    cont_ratio=2.699,       # A_c/A_t = (R_c/R_t)^2 = (8.9416/5.4416)^2
+    L_star=0.914,           # 36 inches — RS25 LH2/LOX
+    theta1=25.4167,         # Hardware convergence half-angle [deg]
+    thetaD=37.0,
+    thetaE=5.3738,
+    R1_mult=0.3196,         # R_1/R_t = 1.73921/5.4416 (hardware, dimensionless)
+    RU_mult=0.9469,         # R_U/R_t = 5.1527/5.4416
+    RD_mult=0.3711,         # R_D/R_t = 2.019/5.4416
+    wall_k=316.0,           # Copper alloy (NARloy-Z) — matches MixtureOptimization.py
+    wall_roughness=2.5e-7,  # Milled / electroformed
+    wall_melt_T=1356.0,     # Cu melting point [K]
+    T_coolant_inlet=52.0,   # Coolant Inlet [K]
+    P_coolant_inlet=44.82e6,# Coolant Inlet Pressure [Pa] — 4.482e7 per Wang & Luong
+    mdot_coolant=14.31,     # [kg/s] STMCC circuit only: 31.54 lb/s per Wang & Luong (1994)
+                            # RS25 splits total LH2 flow — only ~21% goes through STMCC channels
+    N_channels=390,
+    dx=1e-3,                # Step size for 1-D analysis [m]
+)
+
+
+# =============================================================================
+# END CONFIG
+# =============================================================================
+
+
+def run():
+    # --- Step 1: CEA ---
+    cea_result = get_cea_for_analysis(config)
+    if cea_result is None:
+        # Only a sweep was requested — plots shown, nothing further to do
+        return
+
+    # --- Step 2: Engine geometry ---
+    geom = size_engine(config, cea_result)
+    plot_contour(geom, dx=5e-4)
+
+    # Derive coolant mass flow if not set (assume fuel-cooled)
+    if config.mdot_coolant is None:
+        config.mdot_coolant = geom.mdot_fuel
+        print(f"\nDerived mdot_coolant = mdot_fuel = {geom.mdot_fuel:.4f} kg/s")
+
+    # --- Step 3: Adiabatic flow solution (isentropic first pass) ---
+    chan_geom = ChannelGeometry(
+    x_j       = np.array([0.0, 0.0127, 0.0315, 0.0508, 0.0762, 0.1016, 0.127, 0.1524, 0.1778, 0.2032, 0.2286, 0.254, 0.2667, 0.2794, 0.2921, 0.3048, 0.3175, 0.32512, 0.3302, 0.3429, 0.3556, 0.381, 0.4064, 0.4318, 0.4572, 0.4826, 0.508, 0.5334, 0.5588, 0.6027,]),
+    chan_w    = np.array([0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001509, 0.001217, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001227, 0.001575, 0.001575, 0.001575,]),   # 1.5 mm channel width
+    chan_h    = np.array([0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.003442, 0.004953, 0.004953, 0.004953, 0.004953, 0.005352, 0.006096, 0.006096, 0.006096,]),   # 3.0 mm channel height
+    chan_t    = np.array([0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000889, 0.000889,]),   # 0.8 mm wall thickness
+    chan_land = np.array([0.002068, 0.002068, 0.002068, 0.002068, 0.002068, 0.002045, 0.001976, 0.001857, 0.001748, 0.001844, 0.001847, 0.001653, 0.001562, 0.001463, 0.001361, 0.001275, 0.001196, 0.001261, 0.001143, 0.001113, 0.001105, 0.001209, 0.001516, 0.001603, 0.001554, 0.001844, 0.002131, 0.002405, 0.002685, 0.003155,]),   # 1.0 mm land width
+    )
+
+    # Limit to the axial range covered by the cooling channel geometry
+    flow = solve_flow(geom, cea_result, config, xf=chan_geom.x_j[-1])
+    print(flow.x[-1])
+    # --- Step 4: Thermal analysis ---
+    # TODO: replace these placeholder channel dimensions with your actual design.
+    # x_j covers the full engine (injector face → nozzle exit).
+    total_len = geom.L_c + geom.L_nozzle
+    # x_j = np.linspace(0.0, total_len, 20)
+
+
+    thermal = solve_thermal(flow, geom, cea_result, chan_geom, config)
+
+    plot_thermal(thermal, geom, config)
+
+    plt.show()  # Keep all plot windows open
+
+
+if __name__ == "__main__":
+    run()

@@ -523,7 +523,7 @@ def calc_q_wall(dx, x, y, T_hw, T_cw, engine_info):
 
 
 # -----------------------------------------------------------------------
-# Engine info container all inputs are specified t
+# Engine info container all inputs are specified 
 # -----------------------------------------------------------------------
 class EngineInfo:
     def __init__(self, gam, C_star, M_c, P_c, T_c, Cp, F_Vac, Ncc,
