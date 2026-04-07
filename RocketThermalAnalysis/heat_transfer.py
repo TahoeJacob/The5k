@@ -291,11 +291,26 @@ def _coolant_heat(x: float, T_cw: float, T_cool: float, P_cool: float,
     f  = _colebrook_f(Re, Dh, e)
 
     # Nusselt number
-    if fluid in ("RP1", "Methane"):
-        # Gnielinski (1975) — valid for Re > 3000 (clamp Re for stability)
-        Re_g = max(Re, 3001.0)
-        Nu   = ((f / 8.0) * (Re_g - 1000.0) * Pr) / (
-                 1.0 + 12.7 * np.sqrt(f / 8.0) * (Pr**(2.0 / 3.0) - 1.0))
+    if fluid == "RP1":
+        # Ponomarenko / Dobrovolsky kerosene correlation (used by RPA):
+        #   Nu = 0.021 Re^0.8 Pr^0.4 (0.64 + 0.36 T_c/T_wc)
+        # The temperature-ratio factor accounts for large property variation
+        # between the bulk coolant and the hot wall — critical for RP-1 where
+        # T_c << T_wc.  Omitting it (e.g. Gnielinski) over-predicts h_cool by
+        # ~25% and artificially collapses T_hw toward T_coolant.
+        if Re < 2300.0:
+            Nu = 4.36
+        else:
+            T_ratio = T_cool / max(T_cw, T_cool + 1.0)   # clip to avoid div/0
+            Nu = 0.021 * Re**0.8 * Pr**0.4 * (0.64 + 0.36 * T_ratio)
+    elif fluid == "Methane":
+        # Ponomarenko methane correlation (RPA):
+        #   Nu = 0.0185 Re^0.8 Pr^0.4 (T_c/T_wc)^0.1
+        if Re < 2300.0:
+            Nu = 4.36
+        else:
+            T_ratio = T_cool / max(T_cw, T_cool + 1.0)
+            Nu = 0.0185 * Re**0.8 * Pr**0.4 * T_ratio**0.1
     else:
         # Niino (1982) for cryogenic hydrogen
         f_sm    = _colebrook_f(Re, Dh, 0.0)       # smooth-pipe reference
@@ -320,15 +335,27 @@ def _coolant_heat(x: float, T_cw: float, T_cool: float, P_cool: float,
 
     h_cool = Nu * cond / Dh
 
-    # Rectangular fin efficiency (land between channels, adiabatic tip)
-    # m = sqrt(h · P_fin / (k · A_fin))  where P_fin = 2·(land + dx), A_fin = land · dx
+    # Rectangular fin efficiency (land between channels, adiabatic tip).
+    #
+    # The land is a radial fin: base at T_cw, tip adiabatic, height = chan_h.
+    # Its cross-section (perpendicular to radial direction): chan_land × dx.
+    # Of the four faces, only the two AZIMUTHAL faces (dx tall × chan_h) are
+    # exposed to coolant — the two AXIAL faces connect to adjacent land segments
+    # and carry no independent convection in the 1-D marching model.
+    #
+    # Therefore:  P = 2·dx,   A_c = chan_land·dx
+    #   → m = √(hP / kA_c) = √(2h / (k·chan_land))   [mesh-independent]
+    #
+    # This is identical to RPA's formulation (Ponomarenko 2012, p.17):
+    #   ξ = √(2α_c / λ_w) · b/√δ  with b=chan_h, δ=chan_land
+    #
+    # Note: P = 2·(chan_land+dx) is WRONG for this geometry — it includes the
+    # axial end faces and makes m² mesh-dependent (diverges as dx→0).
     DT = T_cw - T_cool
     if chan_land > 1e-9:
-        P_fin  = 2.0 * (chan_land + dx)
-        A_fin  = chan_land * dx
-        m_fin  = np.sqrt(h_cool * P_fin / (k_w * A_fin))
-        L_fin  = chan_h + chan_land / 2.0
-        q_fin  = np.sqrt(h_cool * P_fin * k_w * A_fin) * DT * np.tanh(
+        m_fin  = np.sqrt(2.0 * h_cool / (k_w * chan_land))
+        L_fin  = chan_h + chan_land / 2.0          # Incropera adiabatic-tip correction
+        q_fin  = np.sqrt(2.0 * h_cool * k_w * chan_land) * dx * DT * np.tanh(
                      np.clip(m_fin * L_fin, 0.0, 50.0))
     else:
         q_fin = 0.0
