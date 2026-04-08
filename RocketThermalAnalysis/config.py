@@ -72,6 +72,8 @@ class EngineConfig:
     # -----------------------------------------------------------------------
     N_channels: int = 36
     dx: float = 1e-3     # Axial integration step [m]
+    wall_2d: bool = False  # True = 2-D wall conduction (Betti method);
+                           # False = 1-D flat-plate + fin model
 
     # -----------------------------------------------------------------------
     # Film cooling  (set film_fraction > 0 to enable)

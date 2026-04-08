@@ -74,30 +74,59 @@ config = EngineConfig(
 # =============================================================================
 # RS25 ENGINE CONFIG — Same config as MixtureOptimazation.py Output aligns relatively with Betti/Wang/CryoRocket.com
 # =============================================================================
+# config = EngineConfig(
+#     fuel="LH2", oxidizer="LOX", coolant="Hydrogen",
+#     P_c=18.23E6,
+#     F_vac=2184076.8131,        # N (100% RPL)
+#     OF=6.0,
+#     exp_ratio=69.5,
+#     cont_ratio=2.699,       # A_c/A_t = (R_c/R_t)^2 = (8.9416/5.4416)^2
+#     L_star=0.914,           # 36 inches — RS25 LH2/LOX
+#     theta1=25.4167,         # Hardware convergence half-angle [deg]
+#     thetaD=37.0,
+#     thetaE=5.3738,
+#     R1_mult=0.3196,         # R_1/R_t = 1.73921/5.4416 (hardware, dimensionless)
+#     RU_mult=0.9469,         # R_U/R_t = 5.1527/5.4416
+#     RD_mult=0.3711,         # R_D/R_t = 2.019/5.4416
+#     wall_k=316.0,           # Copper alloy (NARloy-Z) — matches MixtureOptimization.py
+#     wall_roughness=2.5e-7,  # Milled / electroformed
+#     wall_melt_T=1356.0,     # Cu melting point [K]
+#     T_coolant_inlet=52.0,   # Coolant Inlet [K]
+#     P_coolant_inlet=44.82e6,# Coolant Inlet Pressure [Pa] — 4.482e7 per Wang & Luong
+#     mdot_coolant=14.31,     # [kg/s] STMCC circuit only: 31.54 lb/s per Wang & Luong (1994)
+#                             # RS25 splits total LH2 flow — only ~21% goes through STMCC channels
+#     N_channels=390,
+#     dx=1e-3,                # Step size for 1-D analysis [m]
+#     wall_2d=True,           # 2-D wall conduction (Betti quasi-2D method)
+# )
+
+# =============================================================================
+# BETTI FPL VALIDATION — Betti, Pizzarelli & Nasuti (J. Prop. Power, 2014)
+# SSME MCC at FPL (109% rated thrust), standard throat, ε=5
+# =============================================================================
 config = EngineConfig(
     fuel="LH2", oxidizer="LOX", coolant="Hydrogen",
-    P_c=18.23E6,
-    F_vac=2184076.8131,        # N (100% RPL)
+    P_c=22.587e6,               # 225.87 bar — FPL chamber pressure
+    F_vac=2015429.0,            # [N] — calibrated for D_t=261.75mm
     OF=6.0,
-    exp_ratio=69.5,
-    cont_ratio=2.699,       # A_c/A_t = (R_c/R_t)^2 = (8.9416/5.4416)^2
-    L_star=0.914,           # 36 inches — RS25 LH2/LOX
-    theta1=25.4167,         # Hardware convergence half-angle [deg]
+    exp_ratio=5.0,              # MCC only (not full nozzle)
+    cont_ratio=3.0,             # Betti Sec III
+    L_star=0.914,               # 36 inches
+    theta1=25.4167,
     thetaD=37.0,
-    thetaE=5.3738,
-    R1_mult=0.3196,         # R_1/R_t = 1.73921/5.4416 (hardware, dimensionless)
-    RU_mult=0.9469,         # R_U/R_t = 5.1527/5.4416
-    RD_mult=0.3711,         # R_D/R_t = 2.019/5.4416
-    wall_k=316.0,           # Copper alloy (NARloy-Z) — matches MixtureOptimization.py
-    wall_roughness=2.5e-7,  # Milled / electroformed
-    wall_melt_T=1356.0,     # Cu melting point [K]
-    T_coolant_inlet=52.0,   # Coolant Inlet [K]
-    P_coolant_inlet=44.82e6,# Coolant Inlet Pressure [Pa] — 4.482e7 per Wang & Luong
-    mdot_coolant=14.31,     # [kg/s] STMCC circuit only: 31.54 lb/s per Wang & Luong (1994)
-                            # RS25 splits total LH2 flow — only ~21% goes through STMCC channels
+    thetaE=10.0,                # Wider exit angle for short MCC nozzle
+    R1_mult=0.3196,
+    RU_mult=0.9469,
+    RD_mult=0.3711,
+    wall_k=316.0,               # NARloy-Z at 533 K
+    wall_roughness=2.3e-7,      # 0.23 μm — Betti "rough" case
+    wall_melt_T=1356.0,
+    T_coolant_inlet=53.89,      # Betti Sec III
+    P_coolant_inlet=44.547e6,   # 445.47 bar — Betti Sec III
+    mdot_coolant=14.306,        # Betti Sec III
     N_channels=390,
-    dx=1e-3,                # Step size for 1-D analysis [m]
-
+    dx=1e-3,
+    wall_2d=True,
 )
 
 
