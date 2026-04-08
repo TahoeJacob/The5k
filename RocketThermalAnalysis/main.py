@@ -127,6 +127,7 @@ config = EngineConfig(
     N_channels=390,
     dx=1e-3,
     wall_2d=True,
+    use_integral_bl=True,
 )
 
 

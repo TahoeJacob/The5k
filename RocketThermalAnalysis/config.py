@@ -74,6 +74,8 @@ class EngineConfig:
     dx: float = 1e-3     # Axial integration step [m]
     wall_2d: bool = False  # True = 2-D wall conduction (Betti method);
                            # False = 1-D flat-plate + fin model
+    use_integral_bl: bool = False  # True = Bartz 1965 integral BL method;
+                                   # False = simplified Bartz (Eq. 50)
 
     # -----------------------------------------------------------------------
     # Film cooling  (set film_fraction > 0 to enable)

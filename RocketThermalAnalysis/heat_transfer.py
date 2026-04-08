@@ -188,6 +188,165 @@ def _bartz_h(M: float, A: float, T_hw: float,
     )
 
 
+def solve_boundary_layer(flow: FlowSolution, cea: CEAResult,
+                         geom: EngineGeometry, T_hw_arr: np.ndarray) -> np.ndarray:
+    """
+    Bartz (1965) integral boundary-layer method for gas-side HTC.
+
+    Marches coupled ODEs for momentum thickness θ (Eq. 25) and energy
+    thickness φ (Eq. 30) from the chamber inlet to the nozzle exit.
+    Computes local skin-friction Cf (Eq. 37, film-temperature method)
+    and Stanton number Ch (Eq. 38, von Kármán Reynolds analogy).
+
+    This replaces the simplified Bartz (Eq. 50) which has no boundary-
+    layer history and over-predicts h_gas in the divergent section.
+
+    References
+    ----------
+    D. R. Bartz, "Turbulent Boundary-Layer Heat Transfer from Rapidly
+    Accelerating Flow of Rocket Combustion Gases and of Heated Air,"
+    Advances in Heat Transfer, Vol. 2, 1965, pp. 1–108.
+
+    Parameters
+    ----------
+    flow     : FlowSolution — isentropic M, P, T, A arrays
+    cea      : CEAResult — stagnation properties
+    geom     : EngineGeometry — throat geometry
+    T_hw_arr : np.ndarray — current hot-wall temperature guess at each station
+
+    Returns
+    -------
+    h_gas : np.ndarray — gas-side HTC [W/(m²·K)] at each flow station
+    """
+    n   = len(flow.x)
+    gam = cea.gamma_c
+    Pr  = cea.Pr_froz_c
+    Cp  = cea.Cp_froz_c
+    mu_ref = cea.visc_c     # reference viscosity at T_c
+    T_ref  = cea.T_c        # reference temperature for power-law scaling
+    R_sp   = cea.R_specific
+
+    h_gas = np.zeros(n)
+
+    # --- Initial conditions ---
+    # Flat-plate turbulent BL at chamber inlet (Bartz 1965 Sec. II.A.7)
+    # θ₀ = 0.036 · L / Re_L^(1/5)  (Schlichting, turbulent flat plate)
+    T_0   = float(flow.T[0])
+    P_0   = float(flow.P[0])
+    M_0   = float(flow.M[0])
+    rho_0 = P_0 / (R_sp * T_0)
+    a_0   = np.sqrt(gam * R_sp * T_0)
+    U_0   = M_0 * a_0
+    mu_0  = mu_ref * (T_0 / T_ref)**0.7
+
+    # Use chamber length as effective run length for IC
+    L_run = geom.L_c
+    Re_L  = max(rho_0 * U_0 * L_run / mu_0, 1e3)
+    theta = 0.036 * L_run / Re_L**0.2
+    phi   = theta   # Reynolds analogy for initial φ ≈ θ
+
+    H = 1.4   # Shape factor δ*/θ — turbulent BL (Coles profile, Appendix B)
+
+    for i in range(n):
+        M_i = float(flow.M[i])
+        T_i = float(flow.T[i])
+        P_i = float(flow.P[i])
+        A_i = float(flow.A[i])
+        r_i = np.sqrt(A_i / np.pi)
+
+        # Local freestream properties
+        mu_i  = mu_ref * (T_i / T_ref)**0.7      # Bartz Eq. 49 power-law
+        rho_i = P_i / (R_sp * T_i)
+        a_i   = np.sqrt(gam * R_sp * T_i)
+        U_i   = M_i * a_i
+
+        # Adiabatic wall temperature (recovery factor r = Pr^(1/3))
+        rec = Pr**(1.0 / 3.0)
+        fac = 1.0 + (gam - 1.0) / 2.0 * M_i**2
+        T_aw_i = T_ref * (1.0 + rec * (gam - 1.0) / 2.0 * M_i**2) / fac
+        T_w_i  = float(T_hw_arr[i])
+
+        # --- Skin friction Cf (Eq. 37, film-temperature method) ---
+        # Cf = 0.0256 / Rθ^(1/4) · [½(T_w/T + 1)]^(-0.6)
+        Re_theta = rho_i * U_i * theta / mu_i
+        Re_theta = max(Re_theta, 100.0)           # floor for numerical stability
+        T_ratio  = 0.5 * (T_w_i / T_i + 1.0)
+        Cf = 0.0256 / Re_theta**0.25 * T_ratio**(-0.6)
+
+        # --- Stanton number Ch (Eq. 38, von Kármán Reynolds analogy) ---
+        # Ch = (Cf/2) / [1 + 5·√(Cf/2)·(1 - Pr + ln((5Pr+1)/6))]
+        sq = np.sqrt(max(Cf / 2.0, 1e-12))
+        denom_vk = 1.0 + 5.0 * sq * (1.0 - Pr + np.log((5.0 * Pr + 1.0) / 6.0))
+        Ch = (Cf / 2.0) / max(denom_vk, 1e-6)
+
+        # h_gas from Stanton number: h = Ch · ρ · U · Cp
+        h_gas[i] = Ch * rho_i * U_i * Cp
+
+        # --- March ODEs to next station (forward Euler) ---
+        if i < n - 1:
+            dx_i = float(flow.x[i + 1] - flow.x[i])
+            if dx_i <= 0:
+                continue
+
+            # Geometric derivatives (finite difference)
+            r_next = np.sqrt(float(flow.A[i + 1]) / np.pi)
+            M_next = float(flow.M[i + 1])
+            drdz   = (r_next - r_i) / dx_i
+            dMdz   = (M_next - M_i) / dx_i
+
+            sqrt_wall = np.sqrt(1.0 + drdz**2)   # wall-length factor
+
+            # Momentum thickness ODE (Eq. 25)
+            # dθ/dz = (Cf/2)·√(1+(dr/dz)²)
+            #       − θ·[(2−M²+H)/(M·(1+(γ−1)/2·M²))·dM/dz + (1/r)·dr/dz]
+            if M_i > 1e-3 and r_i > 1e-6:
+                M_coeff = (2.0 - M_i**2 + H) / (M_i * fac)
+                dtheta = ((Cf / 2.0) * sqrt_wall
+                          - theta * (M_coeff * dMdz + drdz / r_i))
+            else:
+                dtheta = (Cf / 2.0) * sqrt_wall
+
+            # Energy thickness ODE (Eq. 30)
+            # dφ/dz = Ch·(T_aw−T_w)/(T₀−T_w)·√(1+(dr/dz)²)
+            #       − φ·[(1−M²)/(M·fac)·dM/dz + (1/r)·dr/dz − dT_w/dz/(T₀−T_w)]
+            T_w_next = float(T_hw_arr[min(i + 1, n - 1)])
+            dTw_dz   = (T_w_next - T_w_i) / dx_i
+            dT_drive = T_ref - T_w_i       # T₀ − T_w
+            if abs(dT_drive) < 1.0:
+                dT_drive = 1.0              # avoid division by zero
+
+            Ch_source = Ch * (T_aw_i - T_w_i) / dT_drive * sqrt_wall
+
+            if M_i > 1e-3 and r_i > 1e-6:
+                M_coeff_e = (1.0 - M_i**2) / (M_i * fac)
+                dphi = (Ch_source
+                        - phi * (M_coeff_e * dMdz + drdz / r_i
+                                 - dTw_dz / dT_drive))
+            else:
+                dphi = Ch_source
+
+            # Update with floor to prevent negative thickness
+            theta = max(theta + dtheta * dx_i, 1e-8)
+            phi   = max(phi + dphi * dx_i, 1e-8)
+
+    # --- Normalize to calibrated simplified Bartz at the throat ---
+    # The integral method gives the correct SHAPE (BL history effects) but
+    # over-predicts the absolute magnitude at the throat because Re_θ ≪ Re_D*.
+    # Following Bartz 1965 Sec II.B: use the calibrated simplified formula
+    # (Eq. 50) at the throat as the reference magnitude and scale the
+    # integral profile to match.  This preserves the physically-correct
+    # decay in the divergent section while matching calibrated data.
+    i_throat = int(np.argmin(flow.A))
+    h_bl_throat = h_gas[i_throat]
+    h_bartz_throat = _bartz_h(float(flow.M[i_throat]), float(flow.A[i_throat]),
+                               float(T_hw_arr[i_throat]), cea, geom)
+    if h_bl_throat > 0.0:
+        scale = h_bartz_throat / h_bl_throat
+        h_gas *= scale
+
+    return h_gas
+
+
 def _T_aw(M: float, cea: CEAResult) -> float:
     """
     Adiabatic wall temperature [K].
@@ -207,7 +366,8 @@ def _T_aw(M: float, cea: CEAResult) -> float:
 def _gas_heat(x: float, M: float, A: float, T_hw: float, dx: float,
               chan_geom: ChannelGeometry,
               cea: CEAResult, geom: EngineGeometry,
-              T_aw_eff: float = None):
+              T_aw_eff: float = None,
+              h_gas_override: float = None):
     """
     Gas-side heat quantities at axial station x.
 
@@ -216,15 +376,18 @@ def _gas_heat(x: float, M: float, A: float, T_hw: float, dx: float,
     T_aw_eff : float, optional
         Effective adiabatic wall temperature from film cooling model [K].
         If None, the bare Bartz T_aw is used.
+    h_gas_override : float, optional
+        Pre-computed h_gas from integral BL solver [W/(m²·K)].
+        If None, the simplified Bartz (Eq. 50) is used.
 
     Returns
     -------
     q_gas [W]      : heat transferred to ONE channel over step dx
     heatflux [W/m²]: local heat flux
-    h_gas [W/(m²·K)]: Bartz HTC
+    h_gas [W/(m²·K)]: gas-side HTC
     """
     chan_w, _, _, chan_land = chan_geom.at(x)
-    h_g    = _bartz_h(M, A, T_hw, cea, geom)
+    h_g    = h_gas_override if h_gas_override is not None else _bartz_h(M, A, T_hw, cea, geom)
     T_aw_v = T_aw_eff if T_aw_eff is not None else _T_aw(M, cea)
 
     heatflux = h_g * (T_aw_v - T_hw)
@@ -733,12 +896,20 @@ def _solve_wall_2d(x: float, M: float, A: float,
                    config: EngineConfig, mdot_per_ch: float,
                    T_hw_guess: float, T_cw_guess: float,
                    T_aw_eff: float = None,
+                   h_gas_override: float = None,
                    tol: float = 1.0, max_iter: int = 15):
     """
     2-D wall conduction solve at one axial station.
 
     Iterates Bartz h_gas(T_hw) and Niino h_cool(T_cw) with the 2-D
     Laplace solve until T_hw and T_cw converge.
+
+    Parameters
+    ----------
+    h_gas_override : float, optional
+        Pre-computed h_gas from integral BL solver [W/(m²·K)].
+        If provided, Bartz σ iteration on h_gas is skipped — h_gas is
+        held fixed and only h_cool iterates with T_cw.
 
     Returns
     -------
@@ -762,7 +933,10 @@ def _solve_wall_2d(x: float, M: float, A: float,
 
     for it in range(max_iter):
         # Gas-side HTC
-        h_g = _bartz_h(M, A, T_hw, cea, geom)
+        if h_gas_override is not None:
+            h_g = h_gas_override
+        else:
+            h_g = _bartz_h(M, A, T_hw, cea, geom)
 
         # Coolant-side HTC
         h_c, Re_c, Nu_c, Dh_c, v_c, rho_c, f_c, props = _coolant_htc(
@@ -938,10 +1112,19 @@ def solve_thermal(flow: FlowSolution,
         print(f"  Wall model: 2-D conduction (Betti quasi-2D)")
     else:
         print(f"  Wall model: 1-D flat-plate + fin")
+    if config.use_integral_bl:
+        print(f"  Gas-side HTC: Bartz 1965 integral boundary layer")
+    else:
+        print(f"  Gas-side HTC: Simplified Bartz (Eq. 50)")
 
     for outer in range(max_outer):
         T_hw_prev = T_hw_arr.copy()
         T_cw_prev = T_cw_arr.copy()
+
+        # --- Pre-compute h_gas array if using integral BL method ---
+        h_gas_bl = None
+        if config.use_integral_bl:
+            h_gas_bl = solve_boundary_layer(flow, cea, geom, T_hw_arr)
 
         # Coolant enters at nozzle exit (index n-1)
         T_cool = config.T_coolant_inlet
@@ -960,6 +1143,9 @@ def solve_thermal(flow: FlowSolution,
             # Film-corrected T_aw for this station (None = use bare Bartz)
             T_aw_k = float(_T_aw_eff_arr[k]) if film_active else None
 
+            # Pre-computed h_gas from integral BL (None = use simplified Bartz)
+            h_gas_k = float(h_gas_bl[k]) if h_gas_bl is not None else None
+
             if config.wall_2d:
                 # --- 2-D wall conduction path ---
                 (T_hw_nwt, T_cw_nwt, _, q_c,
@@ -967,7 +1153,8 @@ def solve_thermal(flow: FlowSolution,
                  h_enth) = _solve_wall_2d(
                     x, M, A, T_cool, P_cool, s, dx,
                     chan_geom, cea, geom, config, mdot_per_ch,
-                    T_hw_nwt, T_cw_nwt, T_aw_eff=T_aw_k)
+                    T_hw_nwt, T_cw_nwt, T_aw_eff=T_aw_k,
+                    h_gas_override=h_gas_k)
 
                 T_hw_arr[k] = relax * T_hw_nwt + (1.0 - relax) * T_hw_prev[k]
                 T_cw_arr[k] = relax * T_cw_nwt + (1.0 - relax) * T_cw_prev[k]
@@ -992,7 +1179,8 @@ def solve_thermal(flow: FlowSolution,
                 T_cw_arr[k] = relax * T_cw_nwt + (1.0 - relax) * T_cw_prev[k]
 
                 q_g, hf, h_g = _gas_heat(x, M, A, T_hw_arr[k], dx, chan_geom,
-                                          cea, geom, T_aw_eff=T_aw_k)
+                                          cea, geom, T_aw_eff=T_aw_k,
+                                          h_gas_override=h_gas_k)
                 (q_c, T_cool_new, P_cool_new,
                  h_c, Re, Nu, Dh, v, rho) = _coolant_heat(
                     x, T_cw_arr[k], T_cool, P_cool, s, dx,
