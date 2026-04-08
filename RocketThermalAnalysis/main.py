@@ -60,14 +60,14 @@ config = EngineConfig(
 
     # Channels — bifurcating: 40 at throat, splits to 80 in chamber/exit
     N_channels             = 40,    # fallback (used if throat/chamber not set)
-    N_channels_throat      = 65,
-    N_channels_chamber     = 130,
+    N_channels_throat      = 75,
+    N_channels_chamber     = 150,
     channel_split_r_ratio  = 2.0,   # split when local r > 2·R_t
     dx                     = 1e-3,
 
     # Tapered channel height: shallow at throat for high velocity, deeper
     # in the chamber and exit to keep ΔP manageable
-    chan_h_throat  = 0.5e-3,
+    chan_h_throat  = 0.6e-3,
     chan_h_chamber = 0.8e-3,
     chan_h_exit    = 0.8e-3,
 
