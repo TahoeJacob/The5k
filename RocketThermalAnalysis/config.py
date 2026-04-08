@@ -71,7 +71,25 @@ class EngineConfig:
     # Channel count and solver settings
     # -----------------------------------------------------------------------
     N_channels: int = 36
+    # Bifurcating channels: if N_channels_throat is set, channels at the throat
+    # use N_channels_throat and split into N_channels_chamber wherever the local
+    # wall radius exceeds channel_split_r_ratio · R_t.  Leave as None to use the
+    # constant N_channels above for the entire engine.
+    N_channels_throat:  Optional[int] = None
+    N_channels_chamber: Optional[int] = None
+    channel_split_r_ratio: float = 2.0   # split when r/R_t exceeds this
+    channel_split_transition: float = 10e-3  # axial length [m] over which the
+                                              # Y-cusp split is smoothed (real
+                                              # cusps are not instantaneous).
+                                              # Set to 0 for hard step.
     dx: float = 1e-3     # Axial integration step [m]
+    # Tapered channel height [m].  If any of these are None, channel height
+    # falls back to a constant 2 mm (set in main.py).  When all three are
+    # provided, height is linearly interpolated: chamber → throat → exit.
+    chan_h_throat:  Optional[float] = None
+    chan_h_chamber: Optional[float] = None
+    chan_h_exit:    Optional[float] = None
+
     wall_2d: bool = False  # True = 2-D wall conduction (Betti method);
                            # False = 1-D flat-plate + fin model
     use_integral_bl: bool = False  # True = Bartz 1965 integral BL method;

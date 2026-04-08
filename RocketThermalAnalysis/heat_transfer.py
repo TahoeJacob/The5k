@@ -33,6 +33,7 @@ import scipy.optimize as sp
 import scipy.sparse as sparse
 import scipy.sparse.linalg as spla
 from dataclasses import dataclass
+from typing import Optional
 
 from geometry import EngineGeometry
 from cea_interface import CEAResult
@@ -65,6 +66,10 @@ class ChannelGeometry:
     chan_h:    np.ndarray
     chan_t:    np.ndarray
     chan_land: np.ndarray
+    n_chan:    Optional[np.ndarray] = None  # channel count at each station
+                                             # (for bifurcating designs).
+                                             # If None, falls back to
+                                             # config.N_channels everywhere.
 
     def at(self, x: float):
         """
@@ -1087,7 +1092,18 @@ def solve_thermal(flow: FlowSolution,
 
     n           = len(flow.x)
     dx          = config.dx
-    mdot_per_ch = config.mdot_coolant / config.N_channels
+
+    # Per-station mdot per channel.  For bifurcating designs the channel
+    # count varies along x.  Float values are kept (not rounded) so the
+    # Y-cusp transition smooths continuously across the split band.
+    if chan_geom.n_chan is not None:
+        n_chan_at_flow = np.interp(flow.x, chan_geom.x_j,
+                                   chan_geom.n_chan.astype(float))
+        mdot_per_ch_arr = config.mdot_coolant / np.maximum(n_chan_at_flow, 1.0)
+    else:
+        n_chan_at_flow  = np.full(n, float(config.N_channels))
+        mdot_per_ch_arr = np.full(n, config.mdot_coolant / config.N_channels)
+    mdot_per_ch = float(mdot_per_ch_arr[int(np.argmin(flow.A))])  # throat value (for printout only)
 
     # Output arrays (index 0 = injector, index n-1 = nozzle exit)
     T_hw_arr  = np.full(n, T_hw_init)
@@ -1112,9 +1128,18 @@ def solve_thermal(flow: FlowSolution,
 
     film_active = (_T_aw_eff_arr is not None)
     print(f"\n--- Thermal Solver ---")
+    n_ch_min = int(round(float(n_chan_at_flow.min())))
+    n_ch_max = int(round(float(n_chan_at_flow.max())))
+    if n_ch_min == n_ch_max:
+        n_ch_str = f"{n_ch_min}"
+        mdot_str = f"{(config.mdot_coolant/n_ch_min)*1000:.2f} g/s"
+    else:
+        n_ch_str = f"{n_ch_min}–{n_ch_max} (bifurcating)"
+        mdot_str = (f"{(config.mdot_coolant/n_ch_max)*1000:.2f}–"
+                    f"{(config.mdot_coolant/n_ch_min)*1000:.2f} g/s")
     print(f"  Fluid: {config.coolant}  "
-          f"N_ch: {config.N_channels}  "
-          f"mdot/ch: {mdot_per_ch*1000:.2f} g/s  "
+          f"N_ch: {n_ch_str}  "
+          f"mdot/ch: {mdot_str}  "
           f"T_in: {config.T_coolant_inlet:.0f} K  "
           f"P_in: {config.P_coolant_inlet/1e5:.1f} bar")
     if film_active:
@@ -1158,13 +1183,15 @@ def solve_thermal(flow: FlowSolution,
             # Pre-computed h_gas from integral BL (None = use simplified Bartz)
             h_gas_k = float(h_gas_bl[k]) if h_gas_bl is not None else None
 
+            mdot_per_ch_k = float(mdot_per_ch_arr[k])
+
             if config.wall_2d:
                 # --- 2-D wall conduction path ---
                 (T_hw_nwt, T_cw_nwt, _, q_c,
                  h_g, h_c, Re, Nu, Dh, v, rho, f_c,
                  h_enth) = _solve_wall_2d(
                     x, M, A, T_cool, P_cool, s, dx,
-                    chan_geom, cea, geom, config, mdot_per_ch,
+                    chan_geom, cea, geom, config, mdot_per_ch_k,
                     T_hw_nwt, T_cw_nwt, T_aw_eff=T_aw_k,
                     h_gas_override=h_gas_k,
                     C_bartz=config.C_bartz)
@@ -1179,12 +1206,12 @@ def solve_thermal(flow: FlowSolution,
 
                 T_cool_new, P_cool_new = _advance_coolant(
                     x, q_c, T_cool, P_cool, dx, f_c, rho, v, Dh,
-                    h_enth, chan_geom, config, mdot_per_ch)
+                    h_enth, chan_geom, config, mdot_per_ch_k)
             else:
                 # --- 1-D wall conduction path (original) ---
                 T_hw_nwt, T_cw_nwt = _newton_solve(
                     x, M, A, T_cool, P_cool, s, dx,
-                    chan_geom, cea, geom, config, mdot_per_ch,
+                    chan_geom, cea, geom, config, mdot_per_ch_k,
                     T_hw_nwt, T_cw_nwt,
                     T_aw_eff=T_aw_k)
 
@@ -1198,7 +1225,7 @@ def solve_thermal(flow: FlowSolution,
                 (q_c, T_cool_new, P_cool_new,
                  h_c, Re, Nu, Dh, v, rho) = _coolant_heat(
                     x, T_cw_arr[k], T_cool, P_cool, s, dx,
-                    chan_geom, geom, config, mdot_per_ch)
+                    chan_geom, geom, config, mdot_per_ch_k)
 
             T_cool_arr[k] = T_cool
             P_cool_arr[k] = P_cool
@@ -1318,11 +1345,17 @@ def plot_thermal(thermal: ThermalSolution,
     # Build figure
     # ------------------------------------------------------------------
     fig = plt.figure(figsize=(16, 13))
+    if (config.N_channels_throat is not None
+            and config.N_channels_chamber is not None
+            and config.N_channels_throat != config.N_channels_chamber):
+        ncc_str = f'Ncc = {config.N_channels_throat}/{config.N_channels_chamber}'
+    else:
+        ncc_str = f'Ncc = {config.N_channels}'
     fig.suptitle(
         f'{config.fuel}/{config.oxidizer}  '
         f'Pc = {config.P_c/1e5:.0f} bar  '
         f'O/F = {config.OF}  '
-        f'Ncc = {config.N_channels}  '
+        f'{ncc_str}  '
         f'ṁ_cool = {config.mdot_coolant:.2f} kg/s',
         fontsize=12)
 

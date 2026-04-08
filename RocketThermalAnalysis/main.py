@@ -30,7 +30,7 @@ config = EngineConfig(
 
     # O/F — uncomment / set both for sweep + analysis
     OF        = 2.0,
-    OF_sweep  = (1.5, 8, 0.1),
+    OF_sweep  = None,
 
     # CEA
     frozen = False,
@@ -50,7 +50,7 @@ config = EngineConfig(
 
     # Wall material (6061-T6 Al)
     wall_k         = 167.0,     # [W/m*K]
-    wall_roughness = 6.3e-6,    
+    wall_roughness = 12.0e-6,   # SLM AlSi10Mg as-printed (Ra ~10-12 µm)
     wall_melt_T    = 855.0,     # [K]
 
     # Coolant inlet (counter-current from nozzle exit)
@@ -58,12 +58,21 @@ config = EngineConfig(
     P_coolant_inlet = 35.0e5,   # [Pa]
     mdot_coolant    = None,     # computed from OF + mdot_total
 
-    # Channels
-    N_channels = 36,
-    dx         = 6e-3,
+    # Channels — bifurcating: 40 at throat, splits to 80 in chamber/exit
+    N_channels             = 40,    # fallback (used if throat/chamber not set)
+    N_channels_throat      = 65,
+    N_channels_chamber     = 130,
+    channel_split_r_ratio  = 2.0,   # split when local r > 2·R_t
+    dx                     = 1e-3,
 
-    # Film Cooling 
-    film_fraction  = 0.15,   # 5% of fuel flow as film
+    # Tapered channel height: shallow at throat for high velocity, deeper
+    # in the chamber and exit to keep ΔP manageable
+    chan_h_throat  = 0.7e-3,
+    chan_h_chamber = 0.8e-3,
+    chan_h_exit    = 0.8e-3,
+
+    # Film Cooling
+    film_fraction  = 0.15,   # 5% of fuel flow as film (target: as low as possible)
     film_inject_x  = 0.0,    # inject at injector face
     film_coolant   = "RP1",
     film_T_inlet   = 400.0,
@@ -160,24 +169,141 @@ def run():
 
     # Define Cooling Channel Geometry
     x_j = np.arange(0, geom.L_c + geom.L_nozzle, config.dx) # Create slices at each dx
-    chan_h = np.full(shape=(len(x_j),), fill_value=2e-3) # 2mm constant height channel at each slice
-    chan_t = np.full(shape=(len(x_j),), fill_value=1e-3) # 1mm Constant thickness channel at each slice
-    chan_land = np.full(shape=(len(x_j),), fill_value= 1.5e-3) # 1.5mm Constant land width channel at each slice
-    chan_w = np.zeros(len(x_j)) # Pre-fill in chan_w for each slcie with a zero
+    chan_t = np.full(shape=(len(x_j),), fill_value=0.9e-3) # 1mm Constant thickness channel at each slice
+    chan_land = np.full(shape=(len(x_j),), fill_value= 1.0e-3) # 1.0mm Constant land width channel at each slice
+    chan_w = np.zeros(len(x_j)) # Pre-fill in chan_w for each slice with a zero
+    chan_h = np.zeros(len(x_j))
+    n_chan_per_station = np.zeros(len(x_j), dtype=int)
+
+    # Bifurcation setup: throat-region channel count, splitting to chamber count
+    # wherever the local wall radius exceeds split_r_ratio · R_t
+    N_throat  = config.N_channels_throat  or config.N_channels
+    N_chamber = config.N_channels_chamber or N_throat
+    split_r   = config.channel_split_r_ratio * geom.R_t
+    x_throat  = geom.L_c   # throat axial location
+
+    # Find the two axial locations where r(x) = split_r — one upstream of the
+    # throat (chamber → throat) and one downstream (throat → exit).  Across a
+    # configurable transition band the channel count is ramped linearly to
+    # mimic a real Y-cusp split rather than an instantaneous jump.
+    r_arr_for_split = np.array([nozzle_radius(x, geom, config.dx) for x in x_j])
+    split_above = r_arr_for_split > split_r
+    x_split_up   = None
+    x_split_down = None
+    for i in range(1, len(x_j)):
+        if split_above[i] != split_above[i - 1]:
+            # linear interp for crossing position
+            r0, r1 = r_arr_for_split[i - 1], r_arr_for_split[i]
+            frac = (split_r - r0) / (r1 - r0) if r1 != r0 else 0.0
+            x_cross = x_j[i - 1] + frac * (x_j[i] - x_j[i - 1])
+            if x_cross < x_throat and x_split_up is None:
+                x_split_up = x_cross
+            elif x_cross > x_throat:
+                x_split_down = x_cross
+
+    half_trans = 0.5 * config.channel_split_transition
+
+    def n_local_at(x: float) -> float:
+        """Effective (possibly non-integer) channel count at axial station x.
+        Equals N_throat between the two crossings, N_chamber outside, and
+        ramps linearly across a band of width channel_split_transition
+        centered on each crossing."""
+        if x_split_up is not None and x < x_split_up - half_trans:
+            return float(N_chamber)
+        if x_split_up is not None and x < x_split_up + half_trans:
+            f = (x - (x_split_up - half_trans)) / max(2.0 * half_trans, 1e-12)
+            return float(N_chamber + (N_throat - N_chamber) * f)
+        if x_split_down is None or x < x_split_down - half_trans:
+            return float(N_throat)
+        if x < x_split_down + half_trans:
+            f = (x - (x_split_down - half_trans)) / max(2.0 * half_trans, 1e-12)
+            return float(N_throat + (N_chamber - N_throat) * f)
+        return float(N_chamber)
+
+    # Tapered channel height (linear interp chamber → throat → exit).
+    # Falls back to a constant 2 mm if any taper value is unset.
+    if (config.chan_h_throat is not None
+            and config.chan_h_chamber is not None
+            and config.chan_h_exit is not None):
+        x_taper = np.array([0.0, x_throat, geom.L_c + geom.L_nozzle])
+        h_taper = np.array([config.chan_h_chamber,
+                            config.chan_h_throat,
+                            config.chan_h_exit])
+        chan_h[:] = np.interp(x_j, x_taper, h_taper)
+    else:
+        chan_h[:] = 2e-3
 
     # Calculate width at each slice based off land width
+    n_chan_float = np.zeros(len(x_j))
     for i, x in enumerate(x_j):
         r = nozzle_radius(x, geom, config.dx) # Calculate the radius of the slice
+        N_local = n_local_at(x)               # smoothed Y-cusp transition
+        n_chan_float[i] = N_local
+        n_chan_per_station[i] = int(round(N_local))
         circ = 2*np.pi*r # Calculate the circumference of the slice
-        avail_width = circ/config.N_channels # Calculate available width at each slice
+        avail_width = circ/N_local # Calculate available width at each slice
         chan_w[i] = avail_width - chan_land[i] # Calculate width at each slice
+
+    # Report bifurcation
+    if N_chamber != N_throat:
+        print(f"\n--- Bifurcating channels ---")
+        print(f"  N_throat  = {N_throat}, N_chamber = {N_chamber}")
+        print(f"  Split radius = {split_r*1000:.2f} mm  (= {config.channel_split_r_ratio:.2f} · R_t)")
+        if x_split_up is not None:
+            print(f"  Upstream split   x ≈ {x_split_up*1000:.1f} mm")
+        if x_split_down is not None:
+            print(f"  Downstream split x ≈ {x_split_down*1000:.1f} mm")
+        print(f"  Y-cusp transition length: {config.channel_split_transition*1000:.1f} mm")
+        print(f"  Channel width range:  {chan_w.min()*1000:.3f} – {chan_w.max()*1000:.3f} mm")
+        print(f"  Channel height range: {chan_h.min()*1000:.3f} – {chan_h.max()*1000:.3f} mm")
+
+    # ------------------------------------------------------------------
+    # Segment summary for RPA entry — dimensions at each transition point
+    # ------------------------------------------------------------------
+    def _dims_at(x: float):
+        """Return (N, w, h, land, t, r) at axial station x [m]."""
+        N = n_local_at(x)
+        r = nozzle_radius(x, geom, config.dx)
+        h = float(np.interp(x, x_j, chan_h))
+        ld = float(np.interp(x, x_j, chan_land))
+        t  = float(np.interp(x, x_j, chan_t))
+        w = (2.0 * np.pi * r / N) - ld
+        return N, w, h, ld, t, r
+
+    # Build segment boundary list
+    L_total = geom.L_c + geom.L_nozzle
+    boundaries = [("Injector face", 0.0)]
+    if x_split_up is not None:
+        boundaries.append(("Upstream split START", x_split_up - half_trans))
+        boundaries.append(("Upstream split END",   x_split_up + half_trans))
+    boundaries.append(("Throat", x_throat))
+    if x_split_down is not None:
+        boundaries.append(("Downstream split START", x_split_down - half_trans))
+        boundaries.append(("Downstream split END",   x_split_down + half_trans))
+    boundaries.append(("Nozzle exit", L_total))
+    # Filter out any boundaries that fall outside the engine
+    boundaries = [(lbl, max(0.0, min(x, L_total))) for lbl, x in boundaries]
+
+    print(f"\n--- Segment dimensions for RPA entry ---")
+    print(f"  {'Station':<26} {'x[mm]':>7} {'r[mm]':>7} {'N':>6} "
+          f"{'w[mm]':>7} {'h[mm]':>7} {'land[mm]':>9} {'t_w[mm]':>8}")
+    print("  " + "-"*82)
+    for lbl, x in boundaries:
+        N, w, h, ld, t, r = _dims_at(x)
+        print(f"  {lbl:<26} {x*1000:7.1f} {r*1000:7.2f} {N:6.1f} "
+              f"{w*1000:7.3f} {h*1000:7.3f} {ld*1000:9.3f} {t*1000:8.3f}")
+    print()
+    print(f"  Wall thickness (chan_t): {chan_t.min()*1000:.3f} mm (constant)")
+    print(f"  Engine total length: {L_total*1000:.1f} mm  "
+          f"(L_c={geom.L_c*1000:.1f} mm, L_nozzle={geom.L_nozzle*1000:.1f} mm)")
    
     
     # Display channel geometry just like in RPA
     # for i, x in enumerate(x_j):
     #     print(f"x: {x:.4f} [m] hc: {chan_h[i]*1000:.4f} [mm] a: {chan_w[i]*1000:.4f} b: {chan_land[i]*1000:.4f} [mm]")
  
-    chan_geom = ChannelGeometry(x_j, chan_w, chan_h, chan_t, chan_land,)
+    chan_geom = ChannelGeometry(x_j, chan_w, chan_h, chan_t, chan_land,
+                                n_chan=n_chan_float)
 
     # chan_geom = ChannelGeometry(
     #     x_j       = np.array([0.0, 0.0127, 0.0315, 0.0508, 0.0762, 0.1016, 0.127, 0.1524, 0.1778, 0.2032, 0.2286, 0.254, 0.2667, 0.2794, 0.2921, 0.3048, 0.3175, 0.32512, 0.3302, 0.3429, 0.3556, 0.381, 0.4064, 0.4318, 0.4572, 0.4826, 0.508, 0.5334, 0.5588, 0.6027,]),
