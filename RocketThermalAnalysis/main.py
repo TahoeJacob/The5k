@@ -63,13 +63,18 @@ config = EngineConfig(
     dx         = 6e-3,
 
     # Film Cooling 
-    film_fraction  = 0.00,   # 5% of fuel flow as film
+    film_fraction  = 0.15,   # 5% of fuel flow as film
     film_inject_x  = 0.0,    # inject at injector face
     film_coolant   = "RP1",
     film_T_inlet   = 400.0,
     film_Kt        = 0.0013, # turbulent mixing intensity (Vasiliev 1993, range 0.0005-0.002)
 
+    wall_2d=True,
+    use_integral_bl=True,
+    C_bartz=0.023,          # Thick BL calibration (Bartz 1965 Fig 10)
 )
+
+
 
 # =============================================================================
 # RS25 ENGINE CONFIG — Same config as MixtureOptimazation.py Output aligns relatively with Betti/Wang/CryoRocket.com
@@ -104,32 +109,32 @@ config = EngineConfig(
 # BETTI FPL VALIDATION — Betti, Pizzarelli & Nasuti (J. Prop. Power, 2014)
 # SSME MCC at FPL (109% rated thrust), standard throat, ε=5
 # =============================================================================
-config = EngineConfig(
-    fuel="LH2", oxidizer="LOX", coolant="Hydrogen",
-    P_c=22.587e6,               # 225.87 bar — FPL chamber pressure
-    F_vac=2015429.0,            # [N] — calibrated for D_t=261.75mm
-    OF=6.0,
-    exp_ratio=5.0,              # MCC only (not full nozzle)
-    cont_ratio=3.0,             # Betti Sec III
-    L_star=0.914,               # 36 inches
-    theta1=25.4167,
-    thetaD=37.0,
-    thetaE=10.0,                # Wider exit angle for short MCC nozzle
-    R1_mult=0.3196,
-    RU_mult=0.9469,
-    RD_mult=0.3711,
-    wall_k=316.0,               # NARloy-Z at 533 K
-    wall_roughness=2.3e-7,      # 0.23 μm — Betti "rough" case
-    wall_melt_T=1356.0,
-    T_coolant_inlet=53.89,      # Betti Sec III
-    P_coolant_inlet=44.547e6,   # 445.47 bar — Betti Sec III
-    mdot_coolant=14.306,        # Betti Sec III
-    N_channels=390,
-    dx=1e-3,
-    wall_2d=True,
-    use_integral_bl=True,
-    C_bartz=0.023,          # Thick BL calibration (Bartz 1965 Fig 10)
-)
+# config = EngineConfig(
+#     fuel="LH2", oxidizer="LOX", coolant="Hydrogen",
+#     P_c=22.587e6,               # 225.87 bar — FPL chamber pressure
+#     F_vac=2015429.0,            # [N] — calibrated for D_t=261.75mm
+#     OF=6.0,
+#     exp_ratio=5.0,              # MCC only (not full nozzle)
+#     cont_ratio=3.0,             # Betti Sec III
+#     L_star=0.914,               # 36 inches
+#     theta1=25.4167,
+#     thetaD=37.0,
+#     thetaE=10.0,                # Wider exit angle for short MCC nozzle
+#     R1_mult=0.3196,
+#     RU_mult=0.9469,
+#     RD_mult=0.3711,
+#     wall_k=316.0,               # NARloy-Z at 533 K
+#     wall_roughness=2.3e-7,      # 0.23 μm — Betti "rough" case
+#     wall_melt_T=1356.0,
+#     T_coolant_inlet=53.89,      # Betti Sec III
+#     P_coolant_inlet=44.547e6,   # 445.47 bar — Betti Sec III
+#     mdot_coolant=14.306,        # Betti Sec III
+#     N_channels=390,
+#     dx=1e-3,
+#     wall_2d=True,
+#     use_integral_bl=True,
+#     C_bartz=0.023,          # Thick BL calibration (Bartz 1965 Fig 10)
+# )
 
 
 # =============================================================================
@@ -167,7 +172,6 @@ def run():
         avail_width = circ/config.N_channels # Calculate available width at each slice
         chan_w[i] = avail_width - chan_land[i] # Calculate width at each slice
    
-    #     # Channel config to be put in:
     
     # Display channel geometry just like in RPA
     # for i, x in enumerate(x_j):
@@ -175,13 +179,13 @@ def run():
  
     chan_geom = ChannelGeometry(x_j, chan_w, chan_h, chan_t, chan_land,)
 
-    chan_geom = ChannelGeometry(
-        x_j       = np.array([0.0, 0.0127, 0.0315, 0.0508, 0.0762, 0.1016, 0.127, 0.1524, 0.1778, 0.2032, 0.2286, 0.254, 0.2667, 0.2794, 0.2921, 0.3048, 0.3175, 0.32512, 0.3302, 0.3429, 0.3556, 0.381, 0.4064, 0.4318, 0.4572, 0.4826, 0.508, 0.5334, 0.5588, 0.6027,]),
-        chan_w    = np.array([0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001509, 0.001217, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001227, 0.001575, 0.001575, 0.001575,]),   # 1.5 mm channel width
-        chan_h    = np.array([0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.003442, 0.004953, 0.004953, 0.004953, 0.004953, 0.005352, 0.006096, 0.006096, 0.006096,]),   # 3.0 mm channel height
-        chan_t    = np.array([0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000889, 0.000889,]),   # 0.8 mm wall thickness
-        chan_land = np.array([0.002068, 0.002068, 0.002068, 0.002068, 0.002068, 0.002045, 0.001976, 0.001857, 0.001748, 0.001844, 0.001847, 0.001653, 0.001562, 0.001463, 0.001361, 0.001275, 0.001196, 0.001261, 0.001143, 0.001113, 0.001105, 0.001209, 0.001516, 0.001603, 0.001554, 0.001844, 0.002131, 0.002405, 0.002685, 0.003155,]),   # 1.0 mm land width
-    )
+    # chan_geom = ChannelGeometry(
+    #     x_j       = np.array([0.0, 0.0127, 0.0315, 0.0508, 0.0762, 0.1016, 0.127, 0.1524, 0.1778, 0.2032, 0.2286, 0.254, 0.2667, 0.2794, 0.2921, 0.3048, 0.3175, 0.32512, 0.3302, 0.3429, 0.3556, 0.381, 0.4064, 0.4318, 0.4572, 0.4826, 0.508, 0.5334, 0.5588, 0.6027,]),
+    #     chan_w    = np.array([0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001575, 0.001509, 0.001217, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001016, 0.001227, 0.001575, 0.001575, 0.001575,]),   # 1.5 mm channel width
+    #     chan_h    = np.array([0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.002489, 0.003442, 0.004953, 0.004953, 0.004953, 0.004953, 0.005352, 0.006096, 0.006096, 0.006096,]),   # 3.0 mm channel height
+    #     chan_t    = np.array([0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000889, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000711, 0.000889, 0.000889,]),   # 0.8 mm wall thickness
+    #     chan_land = np.array([0.002068, 0.002068, 0.002068, 0.002068, 0.002068, 0.002045, 0.001976, 0.001857, 0.001748, 0.001844, 0.001847, 0.001653, 0.001562, 0.001463, 0.001361, 0.001275, 0.001196, 0.001261, 0.001143, 0.001113, 0.001105, 0.001209, 0.001516, 0.001603, 0.001554, 0.001844, 0.002131, 0.002405, 0.002685, 0.003155,]),   # 1.0 mm land width
+    # )
 
 
     # --- Step 3: Adiabatic flow solution (isentropic first pass) ---
