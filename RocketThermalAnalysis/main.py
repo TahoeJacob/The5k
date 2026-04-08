@@ -67,20 +67,20 @@ config = EngineConfig(
 
     # Tapered channel height: shallow at throat for high velocity, deeper
     # in the chamber and exit to keep ΔP manageable
-    chan_h_throat  = 0.7e-3,
+    chan_h_throat  = 0.5e-3,
     chan_h_chamber = 0.8e-3,
     chan_h_exit    = 0.8e-3,
 
     # Film Cooling
-    film_fraction  = 0.15,   # 5% of fuel flow as film (target: as low as possible)
+    film_fraction  = 0.22,   # 5% of fuel flow as film (target: as low as possible)
     film_inject_x  = 0.0,    # inject at injector face
     film_coolant   = "RP1",
     film_T_inlet   = 400.0,
     film_Kt        = 0.0013, # turbulent mixing intensity (Vasiliev 1993, range 0.0005-0.002)
 
     wall_2d=True,
-    use_integral_bl=True,
-    C_bartz=0.023,          # Thick BL calibration (Bartz 1965 Fig 10)
+    use_integral_bl=False,
+    C_bartz=0.026,          # Thin BL calibration (matches RPA's simplified Bartz)
 )
 
 
@@ -169,7 +169,7 @@ def run():
 
     # Define Cooling Channel Geometry
     x_j = np.arange(0, geom.L_c + geom.L_nozzle, config.dx) # Create slices at each dx
-    chan_t = np.full(shape=(len(x_j),), fill_value=0.9e-3) # 1mm Constant thickness channel at each slice
+    chan_t = np.full(shape=(len(x_j),), fill_value=0.9e-3) # 0.9mm Constant thickness channel at each slice
     chan_land = np.full(shape=(len(x_j),), fill_value= 1.0e-3) # 1.0mm Constant land width channel at each slice
     chan_w = np.zeros(len(x_j)) # Pre-fill in chan_w for each slice with a zero
     chan_h = np.zeros(len(x_j))
