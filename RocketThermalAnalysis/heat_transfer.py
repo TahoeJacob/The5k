@@ -155,7 +155,8 @@ def _curvature_at(x: float, geom: EngineGeometry):
 # Gas side
 # -----------------------------------------------------------------------
 def _bartz_h(M: float, A: float, T_hw: float,
-             cea: CEAResult, geom: EngineGeometry) -> float:
+             cea: CEAResult, geom: EngineGeometry,
+             C: float = 0.026) -> float:
     """
     Bartz (1957) gas-side HTC [W/(m²·K)].
 
@@ -170,6 +171,12 @@ def _bartz_h(M: float, A: float, T_hw: float,
 
     σ correction per Sutton & Biblarz (2010) eq. 8-22:
       σ = 1 / [(½·(T_hw/T_c)·(1+(γ-1)/2·M²) + ½)^0.68 · (1+(γ-1)/2·M²)^0.12]
+
+    Parameters
+    ----------
+    C : float
+        Bartz leading coefficient.  C = 0.026 (thin BL, default) or
+        C = 0.023 (thick BL, Bartz 1965 Fig 10).
     """
     gam   = cea.gamma_c
     D_t   = 2.0 * geom.R_t
@@ -179,7 +186,7 @@ def _bartz_h(M: float, A: float, T_hw: float,
     sigma = 1.0 / ((0.5 * (T_hw / cea.T_c) * fac + 0.5)**0.68 * fac**0.12)
 
     return (
-        (0.026 / D_t**0.2)
+        (C / D_t**0.2)
         * (cea.visc_c**0.2 * cea.Cp_froz_c / cea.Pr_froz_c**0.6)
         * (cea.P_c / cea.C_star)**0.8
         * (D_t / R_cur)**0.1
@@ -189,7 +196,8 @@ def _bartz_h(M: float, A: float, T_hw: float,
 
 
 def solve_boundary_layer(flow: FlowSolution, cea: CEAResult,
-                         geom: EngineGeometry, T_hw_arr: np.ndarray) -> np.ndarray:
+                         geom: EngineGeometry, T_hw_arr: np.ndarray,
+                         C_bartz: float = 0.026) -> np.ndarray:
     """
     Bartz (1965) integral boundary-layer method for gas-side HTC.
 
@@ -339,7 +347,8 @@ def solve_boundary_layer(flow: FlowSolution, cea: CEAResult,
     i_throat = int(np.argmin(flow.A))
     h_bl_throat = h_gas[i_throat]
     h_bartz_throat = _bartz_h(float(flow.M[i_throat]), float(flow.A[i_throat]),
-                               float(T_hw_arr[i_throat]), cea, geom)
+                               float(T_hw_arr[i_throat]), cea, geom,
+                               C=C_bartz)
     if h_bl_throat > 0.0:
         scale = h_bartz_throat / h_bl_throat
         h_gas *= scale
@@ -367,7 +376,8 @@ def _gas_heat(x: float, M: float, A: float, T_hw: float, dx: float,
               chan_geom: ChannelGeometry,
               cea: CEAResult, geom: EngineGeometry,
               T_aw_eff: float = None,
-              h_gas_override: float = None):
+              h_gas_override: float = None,
+              C_bartz: float = 0.026):
     """
     Gas-side heat quantities at axial station x.
 
@@ -387,7 +397,7 @@ def _gas_heat(x: float, M: float, A: float, T_hw: float, dx: float,
     h_gas [W/(m²·K)]: gas-side HTC
     """
     chan_w, _, _, chan_land = chan_geom.at(x)
-    h_g    = h_gas_override if h_gas_override is not None else _bartz_h(M, A, T_hw, cea, geom)
+    h_g    = h_gas_override if h_gas_override is not None else _bartz_h(M, A, T_hw, cea, geom, C=C_bartz)
     T_aw_v = T_aw_eff if T_aw_eff is not None else _T_aw(M, cea)
 
     heatflux = h_g * (T_aw_v - T_hw)
@@ -897,6 +907,7 @@ def _solve_wall_2d(x: float, M: float, A: float,
                    T_hw_guess: float, T_cw_guess: float,
                    T_aw_eff: float = None,
                    h_gas_override: float = None,
+                   C_bartz: float = 0.026,
                    tol: float = 1.0, max_iter: int = 15):
     """
     2-D wall conduction solve at one axial station.
@@ -936,7 +947,7 @@ def _solve_wall_2d(x: float, M: float, A: float,
         if h_gas_override is not None:
             h_g = h_gas_override
         else:
-            h_g = _bartz_h(M, A, T_hw, cea, geom)
+            h_g = _bartz_h(M, A, T_hw, cea, geom, C=C_bartz)
 
         # Coolant-side HTC
         h_c, Re_c, Nu_c, Dh_c, v_c, rho_c, f_c, props = _coolant_htc(
@@ -1124,7 +1135,8 @@ def solve_thermal(flow: FlowSolution,
         # --- Pre-compute h_gas array if using integral BL method ---
         h_gas_bl = None
         if config.use_integral_bl:
-            h_gas_bl = solve_boundary_layer(flow, cea, geom, T_hw_arr)
+            h_gas_bl = solve_boundary_layer(flow, cea, geom, T_hw_arr,
+                                                C_bartz=config.C_bartz)
 
         # Coolant enters at nozzle exit (index n-1)
         T_cool = config.T_coolant_inlet
@@ -1154,7 +1166,8 @@ def solve_thermal(flow: FlowSolution,
                     x, M, A, T_cool, P_cool, s, dx,
                     chan_geom, cea, geom, config, mdot_per_ch,
                     T_hw_nwt, T_cw_nwt, T_aw_eff=T_aw_k,
-                    h_gas_override=h_gas_k)
+                    h_gas_override=h_gas_k,
+                    C_bartz=config.C_bartz)
 
                 T_hw_arr[k] = relax * T_hw_nwt + (1.0 - relax) * T_hw_prev[k]
                 T_cw_arr[k] = relax * T_cw_nwt + (1.0 - relax) * T_cw_prev[k]
@@ -1180,7 +1193,8 @@ def solve_thermal(flow: FlowSolution,
 
                 q_g, hf, h_g = _gas_heat(x, M, A, T_hw_arr[k], dx, chan_geom,
                                           cea, geom, T_aw_eff=T_aw_k,
-                                          h_gas_override=h_gas_k)
+                                          h_gas_override=h_gas_k,
+                                          C_bartz=config.C_bartz)
                 (q_c, T_cool_new, P_cool_new,
                  h_c, Re, Nu, Dh, v, rho) = _coolant_heat(
                     x, T_cw_arr[k], T_cool, P_cool, s, dx,

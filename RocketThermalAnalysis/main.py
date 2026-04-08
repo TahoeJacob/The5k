@@ -128,6 +128,7 @@ config = EngineConfig(
     dx=1e-3,
     wall_2d=True,
     use_integral_bl=True,
+    C_bartz=0.023,          # Thick BL calibration (Bartz 1965 Fig 10)
 )
 
 

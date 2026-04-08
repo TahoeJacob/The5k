@@ -76,6 +76,8 @@ class EngineConfig:
                            # False = 1-D flat-plate + fin model
     use_integral_bl: bool = False  # True = Bartz 1965 integral BL method;
                                    # False = simplified Bartz (Eq. 50)
+    C_bartz: float = 0.026  # Bartz coefficient: 0.026 = thin BL (default),
+                             # 0.023 = thick BL (Bartz 1965 Fig 10)
 
     # -----------------------------------------------------------------------
     # Film cooling  (set film_fraction > 0 to enable)
