@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 
 from config import EngineConfig
 from cea_interface import get_cea_for_analysis
-from geometry import size_engine, plot_contour, nozzle_radius
+from geometry import (size_engine, plot_contour, nozzle_radius,
+                      export_csv, export_dxf, _segment_breakpoints)
 from flow_solver import solve_flow
 from heat_transfer import ChannelGeometry, solve_thermal, plot_thermal
 from film_cooling import compute_film_taw
@@ -44,9 +45,9 @@ config = EngineConfig(
     theta1  = 30.0,
     thetaD  = 30.0,
     thetaE  = 12.0,
-    R1_mult = 1.5,
-    RU_mult = 1.5,
-    RD_mult = 0.382,
+    R_chamber_mult     = 1.5,
+    R_throat_conv_mult = 1.0,    # compromise throat shoulder (was 1.5)
+    R_throat_div_mult  = 0.382,
 
     # Wall material (6061-T6 Al)
     wall_k         = 167.0,     # [W/m*K]
@@ -99,9 +100,9 @@ config = EngineConfig(
 #     theta1=25.4167,         # Hardware convergence half-angle [deg]
 #     thetaD=37.0,
 #     thetaE=5.3738,
-#     R1_mult=0.3196,         # R_1/R_t = 1.73921/5.4416 (hardware, dimensionless)
-#     RU_mult=0.9469,         # R_U/R_t = 5.1527/5.4416
-#     RD_mult=0.3711,         # R_D/R_t = 2.019/5.4416
+#     R_chamber_mult=0.3196,     # hardware, dimensionless (chamber-side arc)
+#     R_throat_conv_mult=0.9469, # R_U/R_t = 5.1527/5.4416
+#     R_throat_div_mult=0.3711,  # R_D/R_t = 2.019/5.4416
 #     wall_k=316.0,           # Copper alloy (NARloy-Z) — matches MixtureOptimization.py
 #     wall_roughness=2.5e-7,  # Milled / electroformed
 #     wall_melt_T=1356.0,     # Cu melting point [K]
@@ -129,9 +130,9 @@ config = EngineConfig(
 #     theta1=25.4167,
 #     thetaD=37.0,
 #     thetaE=10.0,                # Wider exit angle for short MCC nozzle
-#     R1_mult=0.3196,
-#     RU_mult=0.9469,
-#     RD_mult=0.3711,
+#     R_chamber_mult=0.3196,
+#     R_throat_conv_mult=0.9469,
+#     R_throat_div_mult=0.3711,
 #     wall_k=316.0,               # NARloy-Z at 533 K
 #     wall_roughness=2.3e-7,      # 0.23 μm — Betti "rough" case
 #     wall_melt_T=1356.0,
@@ -304,6 +305,67 @@ def run():
  
     chan_geom = ChannelGeometry(x_j, chan_w, chan_h, chan_t, chan_land,
                                 n_chan=n_chan_float)
+
+    # --- Export geometry for OnShape (throat-centered, x=0 at throat) ---
+    # Build key station list for channel_dimensions.csv
+    L_total = geom.L_c + geom.L_nozzle
+
+    # Pull contour breakpoints (in injector-face coords) so we can mark the
+    # chamber-arc start (= end of straight chamber section).
+    _segs = _segment_breakpoints(geom)
+    # _segs order: f1 straight, f2 chamber arc, f3 linear taper,
+    #              f4 throat conv fillet, f5 throat div fillet, f6 Bezier bell
+    f2 = _segs[1]   # chamber arc R_chamber
+    f4 = _segs[3]   # throat conv fillet (ends at throat)
+    f5 = _segs[4]   # throat div fillet  (starts at throat)
+    f6 = _segs[5]   # Bezier bell
+
+    key_stations = [("Injector face", 0.0)]
+
+    # Chamber arc R_chamber: start / mid / end
+    key_stations.append(("Chamber arc START", f2[1]))
+    key_stations.append(("Chamber arc MID",   0.5 * (f2[1] + f2[2])))
+    key_stations.append(("Chamber arc END",   f2[2]))
+
+    # Throat-conv fillet: start / mid / end (end == throat, added later)
+    key_stations.append(("Throat conv fillet START", f4[1]))
+    key_stations.append(("Throat conv fillet MID",   0.5 * (f4[1] + f4[2])))
+
+    if x_split_up is not None:
+        key_stations.append(("Upstream split START", x_split_up - half_trans))
+        key_stations.append(("Upstream split MID",   x_split_up))
+        key_stations.append(("Upstream split END",   x_split_up + half_trans))
+
+    key_stations.append(("Throat", geom.L_c))
+
+    # Throat-div fillet: start (== throat) / mid / end
+    key_stations.append(("Throat div fillet MID", 0.5 * (f5[1] + f5[2])))
+    key_stations.append(("Throat div fillet END", f5[2]))
+
+    if x_split_down is not None:
+        key_stations.append(("Downstream split START", x_split_down - half_trans))
+        key_stations.append(("Downstream split MID",   x_split_down))
+        key_stations.append(("Downstream split END",   x_split_down + half_trans))
+
+    # Bezier bell: every 5 mm from start to exit (skip endpoints to avoid
+    # duplicating the throat-div END and Nozzle exit entries)
+    bell_start, bell_end = f6[1], f6[2]
+    bell_dx = 5e-3
+    n_bell = int(np.floor((bell_end - bell_start) / bell_dx))
+    for k in range(1, n_bell + 1):
+        x_bell = bell_start + k * bell_dx
+        if x_bell >= bell_end - 1e-6:
+            break
+        key_stations.append((f"Bell {k*5} mm", x_bell))
+
+    key_stations.append(("Nozzle exit", L_total))
+    # Clamp to valid range and sort by axial position
+    key_stations = [(lbl, max(0.0, min(x, L_total))) for lbl, x in key_stations]
+    key_stations.sort(key=lambda kv: kv[1])
+
+    export_csv(geom, chan_geom, out_dir='exports',
+               key_stations=key_stations, key_stations_N_throat=N_throat)
+    export_dxf(geom, chan_geom, out_dir='exports')
 
     # chan_geom = ChannelGeometry(
     #     x_j       = np.array([0.0, 0.0127, 0.0315, 0.0508, 0.0762, 0.1016, 0.127, 0.1524, 0.1778, 0.2032, 0.2286, 0.254, 0.2667, 0.2794, 0.2921, 0.3048, 0.3175, 0.32512, 0.3302, 0.3429, 0.3556, 0.381, 0.4064, 0.4318, 0.4572, 0.4826, 0.508, 0.5334, 0.5588, 0.6027,]),

@@ -150,9 +150,9 @@ def _curvature_at(x: float, geom: EngineGeometry):
     Returns (radius [m], label) where label ∈ {'Ru', 'Rd', 'none'}.
     """
     if geom.L_e < x <= geom.L_c:
-        return geom.RU, 'Ru'
+        return geom.R_throat_conv, 'Ru'
     if x > geom.L_c:
-        return geom.RD, 'Rd'
+        return geom.R_throat_div, 'Rd'
     return 0.0, 'none'
 
 
@@ -185,7 +185,7 @@ def _bartz_h(M: float, A: float, T_hw: float,
     """
     gam   = cea.gamma_c
     D_t   = 2.0 * geom.R_t
-    R_cur = 0.5 * (geom.RU + geom.RD)   # mean curvature radius at throat
+    R_cur = 0.5 * (geom.R_throat_conv + geom.R_throat_div)  # mean throat curvature
 
     fac   = 1.0 + (gam - 1.0) / 2.0 * M**2
     sigma = 1.0 / ((0.5 * (T_hw / cea.T_c) * fac + 0.5)**0.68 * fac**0.12)
@@ -667,9 +667,14 @@ def _advance_coolant(x: float, q_cool: float,
 # 2-D wall conduction solver  (Betti / Pizzarelli quasi-2-D method)
 # -----------------------------------------------------------------------
 def _make_wall_grid(chan_w_half, chan_t, chan_h, land_half,
-                    n_cw=8, n_lw=6, n_iw=8, n_ch=14):
+                    n_cw=8, n_lw=6, n_iw=8, n_ch=14,
+                    closeout_t=0.0, n_co=8):
     """
     Build aligned x/y node arrays for the unit cell.
+
+    If closeout_t > 0 the grid is extended above the channel ceiling by an
+    additional `closeout_t` of solid material (the outer structural wall),
+    discretised with `n_co` nodes.  The top boundary remains adiabatic.
 
     Returns x_nodes (nx,), y_nodes (ny,).
     """
@@ -677,17 +682,30 @@ def _make_wall_grid(chan_w_half, chan_t, chan_h, land_half,
         np.linspace(0.0, chan_w_half, n_cw, endpoint=False),
         np.linspace(chan_w_half, chan_w_half + land_half, n_lw, endpoint=True),
     ])
-    y_nodes = np.concatenate([
+    y_layers = [
         np.linspace(0.0, chan_t, n_iw, endpoint=False),
-        np.linspace(chan_t, chan_t + chan_h, n_ch, endpoint=True),
-    ])
+        np.linspace(chan_t, chan_t + chan_h, n_ch,
+                    endpoint=(closeout_t <= 0.0)),
+    ]
+    if closeout_t > 0.0:
+        y_layers.append(
+            np.linspace(chan_t + chan_h,
+                        chan_t + chan_h + closeout_t,
+                        n_co, endpoint=True)
+        )
+    y_nodes = np.concatenate(y_layers)
     return x_nodes, y_nodes
 
 
 def _build_wall_2d(x_nodes, y_nodes, chan_w_half, chan_t,
-                   h_gas, T_aw, h_cool, T_cool, k_w):
+                   h_gas, T_aw, h_cool, T_cool, k_w,
+                   chan_h=None, h_ext=0.0, T_ext=300.0):
     """
     Assemble and solve the 2-D Laplace system for the wall unit cell.
+
+    If `chan_h` is supplied, the channel void is bounded above at
+    y = chan_t + chan_h (closeout solid above).  If `chan_h` is None, the
+    void extends to the top of the grid (legacy behavior).
 
     Returns T_field (N_solid,), node_map dict {(i,j): eq_index},
             solid_nodes list [(i,j), ...].
@@ -697,12 +715,14 @@ def _build_wall_2d(x_nodes, y_nodes, chan_w_half, chan_t,
     H  = y_nodes[-1]
     W  = x_nodes[-1]
 
-    # Identify channel void: x < chan_w_half AND y > chan_t  (strict interior)
-    # Boundary nodes AT chan_w_half or chan_t are SOLID (they carry BCs)
+    # Identify channel void: x < chan_w_half AND chan_t < y < chan_t+chan_h
+    # Boundary nodes AT the void edges are SOLID (they carry BCs)
+    y_top_void = chan_t + chan_h if chan_h is not None else float('inf')
     is_void = np.zeros((ny, nx), dtype=bool)
     for j in range(ny):
         for i in range(nx):
-            if x_nodes[i] < chan_w_half - 1e-12 and y_nodes[j] > chan_t + 1e-12:
+            if (x_nodes[i] < chan_w_half - 1e-12
+                    and chan_t + 1e-12 < y_nodes[j] < y_top_void - 1e-12):
                 is_void[j, i] = True
 
     # Map solid nodes to equation indices
@@ -810,12 +830,17 @@ def _build_wall_2d(x_nodes, y_nodes, chan_w_half, chan_t,
 
         # --- Top neighbor (j+1) ---
         if j == ny - 1:
-            # y=H boundary: adiabatic → reflect T_{ny} = T_{ny-2}
+            # y=H boundary: Robin BC with h_ext, T_ext (ambient air on outer
+            # surface).  If h_ext == 0, this collapses to adiabatic.
+            coeff_ghost = k_w / (dy_u * dy_c)
             if j > 0 and (i, j-1) in node_map:
-                coeff = k_w / (dy_u * dy_c)
                 rows.append(eq); cols.append(node_map[(i, j-1)])
-                vals.append(coeff)
-                diag -= coeff
+                vals.append(coeff_ghost)
+                diag -= coeff_ghost
+            if h_ext > 0.0:
+                Bi = h_ext * dy_u / k_w
+                diag -= coeff_ghost * 2.0 * Bi
+                b[eq] -= coeff_ghost * 2.0 * Bi * T_ext
         else:
             _add_coupling(i, j+1, dy_u, dy_c)
 

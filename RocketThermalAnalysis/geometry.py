@@ -40,9 +40,9 @@ class EngineGeometry:
     R_e: float   # Exit radius
 
     # Throat curvature radii [m]
-    R1: float    # Inner convergence fillet
-    RU: float    # Outer convergence curve
-    RD: float    # Divergence fillet
+    R_chamber:    float  # Big chamber-side converging arc
+    R_throat_conv: float # Convergent-side throat fillet (small)
+    R_throat_div:  float # Divergent-side throat fillet
 
     # Nozzle contour angles [deg]
     theta1: float
@@ -116,15 +116,15 @@ def size_engine(config: EngineConfig, cea: CEAResult) -> EngineGeometry:
     R_e = np.sqrt(A_e / np.pi)
 
     # --- Curvature radii from throat radius ---
-    R1 = config.R1_mult * R_t
-    RU = config.RU_mult * R_t
-    RD = config.RD_mult * R_t
+    R_chamber     = config.R_chamber_mult     * R_t
+    R_throat_conv = config.R_throat_conv_mult * R_t
+    R_throat_div  = config.R_throat_div_mult  * R_t
 
     # --- Chamber length via L* volume balance ---
-    # Convergent cone length (includes RU arc at throat)
+    # Convergent cone length (includes throat-conv fillet at throat)
     th1 = np.deg2rad(config.theta1)
     L_cone = ((R_t * (np.sqrt(config.cont_ratio) - 1)
-               + RU * (1.0/np.cos(th1) - 1.0))
+               + R_throat_conv * (1.0/np.cos(th1) - 1.0))
               / np.tan(th1))
 
     # Frustum volume of convergent cone
@@ -157,7 +157,9 @@ def size_engine(config: EngineConfig, cea: CEAResult) -> EngineGeometry:
         A_t=A_t, A_c=A_c, A_e=A_e,
         L_c=L_c, L_e=L_e,
         R_t=R_t, R_c=R_c, R_e=R_e,
-        R1=R1, RU=RU, RD=RD,
+        R_chamber=R_chamber,
+        R_throat_conv=R_throat_conv,
+        R_throat_div=R_throat_div,
         theta1=config.theta1, thetaD=config.thetaD, thetaE=config.thetaE,
         exp_ratio=AR,
         mdot=mdot, mdot_fuel=mdot_fuel, mdot_ox=mdot_ox,
@@ -176,7 +178,9 @@ def _print_geometry(g: EngineGeometry):
     print(f"  Exit      : D_e = {2*g.R_e*1000:.2f} mm   A_e = {g.A_e*1e4:.4f} cm²")
     print(f"  Chamber L : L_c = {g.L_c*1000:.1f} mm  (cyl = {g.L_e*1000:.1f} mm)")
     print(f"  Nozzle L  : L_n = {g.L_nozzle*1000:.1f} mm   L_tot = {(g.L_c+g.L_nozzle)*1000:.2f} mm")
-    print(f"  RU = {g.RU*1000:.2f} mm   RD = {g.RD*1000:.2f} mm   R1 = {g.R1*1000:.2f} mm")
+    print(f"  R_chamber = {g.R_chamber*1000:.2f} mm   "
+          f"R_throat_conv = {g.R_throat_conv*1000:.2f} mm   "
+          f"R_throat_div = {g.R_throat_div*1000:.2f} mm")
     print(f"  mdot      : {g.mdot:.4f} kg/s  (fuel {g.mdot_fuel:.4f}  ox {g.mdot_ox:.4f})")
     print(f"  M_exit    : {g.M_exit:.4f}   P_exit = {g.P_exit/1000:.2f} kPa")
 
@@ -193,11 +197,11 @@ def nozzle_radius(x: float, geom: EngineGeometry, dx: float) -> float:
     R_c   = geom.R_c
     R_t   = geom.R_t
     R_e   = geom.R_e
-    L_c   = geom.L_c 
+    L_c   = geom.L_c
     L_e   = geom.L_nozzle
-    R1    = geom.R1
-    RU    = geom.RU
-    RD    = geom.RD
+    R_chamber     = geom.R_chamber
+    R_throat_conv = geom.R_throat_conv
+    R_throat_div  = geom.R_throat_div
     AR    = geom.exp_ratio
     theta1 = geom.theta1
     thetaD = geom.thetaD
@@ -211,20 +215,20 @@ def nozzle_radius(x: float, geom: EngineGeometry, dx: float) -> float:
     x = x - L_c 
 
     # Throat fillets
-    r1 = RU * R_t # Converting to radius [m]
+    r1 = R_throat_conv  # convergent-side throat fillet radius [m]
     ang1_start = -(90.0 + theta1) * np.pi/180.0     # Convergent radius angle
     xP4 = r1 * np.cos(ang1_start)                   # Convergent radius X coordinate
     yP4 = r1 * np.sin(ang1_start) + (r1 + R_t)      # Convergent radius Y coordinate
 
-    r2 = RD * R_t # Converting to radius [m]
+    r2 = R_throat_div   # divergent-side throat fillet radius [m]
     ang2_end = (thetaD - 90) * np.pi/180            # Divergent radius angle
     Nx = r2 * np.cos(ang2_end)                      # Divergent radius X coordinate
     Ny = r2 * np.sin(ang2_end) + (r2 + R_t)         # Divergent radius Y coordinate
 
-    Ex, Ey = L_e, R_e  
+    Ex, Ey = L_e, R_e
 
     # Converging big arc tangent to straight chamber and -theta1 line
-    rc = R1 * R_t
+    rc = R_chamber
     mc = -np.tan(th1_r)
     bc = yP4 - mc * xP4
     yc = R_c - rc
@@ -407,25 +411,461 @@ def build_contour(geom: EngineGeometry, dx: float = 5e-4):
     return x_arr, r_arr
 
 
+def _dxf_line(layer, x1, y1, x2, y2):
+    return ('0\nLINE\n8\n' + layer +
+            f'\n10\n{x1:.5f}\n20\n{y1:.5f}\n30\n0.0'
+            f'\n11\n{x2:.5f}\n21\n{y2:.5f}\n31\n0.0')
+
+
+def _dxf_arc(layer, cx, cy, r, start_deg, end_deg):
+    # DXF arcs are always CCW from start_deg to end_deg
+    return ('0\nARC\n8\n' + layer +
+            f'\n10\n{cx:.5f}\n20\n{cy:.5f}\n30\n0.0'
+            f'\n40\n{r:.5f}'
+            f'\n50\n{start_deg:.5f}\n51\n{end_deg:.5f}')
+
+
+def _dxf_point(layer, x, y):
+    return ('0\nPOINT\n8\n' + layer +
+            f'\n10\n{x:.5f}\n20\n{y:.5f}\n30\n0.0')
+
+
+def _bell_control_points(geom: 'EngineGeometry'):
+    """
+    Return (Nx, Ny, Qx, Qy, Ex, Ey) for the bell quadratic Bezier in
+    throat-centered MILLIMETER coordinates, plus a list of 3 control-point
+    tuples for printing.
+    """
+    R_t = geom.R_t
+    R_e = geom.R_e
+    L_n = geom.L_nozzle
+    thD = np.deg2rad(geom.thetaD)
+    alp = np.deg2rad(geom.thetaE)
+    r2  = geom.R_throat_div
+
+    a2 = (geom.thetaD - 90.0) * np.pi/180.0
+    Nx = r2 * np.cos(a2)
+    Ny = r2 * np.sin(a2) + (r2 + R_t)
+
+    Ex, Ey = L_n, R_e
+    m1, m2 = np.tan(thD), np.tan(alp)
+    C1 = Ny - m1 * Nx
+    C2 = Ey - m2 * Ex
+    Qx = (C2 - C1) / (m1 - m2)
+    Qy = (m1*C2 - m2*C1) / (m1 - m2)
+
+    M = 1000.0
+    pts = [(Nx*M, Ny*M), (Qx*M, Qy*M), (Ex*M, Ey*M)]
+    return None, None, pts
+
+
+def _write_dxf(filename, entities):
+    """entities = list of pre-formatted DXF entity strings."""
+    dxf = (
+        '0\nSECTION\n2\nHEADER\n0\nENDSEC\n'
+        '0\nSECTION\n2\nENTITIES\n'
+        + '\n'.join(entities) + '\n'
+        '0\nENDSEC\n'
+        '0\nEOF\n'
+    )
+    with open(filename, 'w') as f:
+        f.write(dxf)
+
+
+def _contour_primitives(geom: 'EngineGeometry', layer: str = 'CONTOUR',
+                        radial_offset: float = 0.0):
+    """
+    Return (entities, key_points) for the inner-wall contour as a list of
+    DXF primitive entities (LINE/ARC) plus a coarse LWPOLYLINE for the bell.
+
+    Coordinates are throat-centered, in MILLIMETERS.
+    `radial_offset` (m) shifts every radius outward by that amount — used to
+    generate channel floor / centerline / ceiling curves on the same primitives.
+    """
+    R_c = geom.R_c
+    R_t = geom.R_t
+    R_e = geom.R_e
+    L_c = geom.L_c
+    L_n = geom.L_nozzle
+    th1 = np.deg2rad(geom.theta1)
+    thD = np.deg2rad(geom.thetaD)
+    alp = np.deg2rad(geom.thetaE)
+
+    r1 = geom.R_throat_conv          # convergent throat fillet [m]
+    r2 = geom.R_throat_div           # divergent throat fillet [m]
+    rc = geom.R_chamber              # big chamber arc [m]
+
+    # Convergent fillet endpoint P4 (throat-centered, in m)
+    a1 = -(90.0 + geom.theta1) * np.pi/180.0
+    xP4 = r1 * np.cos(a1)
+    yP4 = r1 * np.sin(a1) + (r1 + R_t)
+
+    # Divergent fillet endpoint N (start of bell)
+    a2 = (geom.thetaD - 90.0) * np.pi/180.0
+    Nx = r2 * np.cos(a2)
+    Ny = r2 * np.sin(a2) + (r2 + R_t)
+
+    # Big chamber arc center & tangent point P3
+    mc = -np.tan(th1)
+    bc = yP4 - mc * xP4
+    yc = R_c - rc
+    s  = np.sqrt(mc*mc + 1.0)
+    xc_plus  = (yc - bc + rc*s)/mc
+    xc_minus = (yc - bc - rc*s)/mc
+    xc = xc_minus if xc_minus < xc_plus else xc_plus
+    S = mc*xc - yc + bc
+    xP3 = xc - mc * S / (mc*mc + 1.0)
+    yP3 = yc + S / (mc*mc + 1.0)
+
+    # Bell exit (throat-centered)
+    Ex, Ey = L_n, R_e
+
+    # Bezier control point Q (from slope constraints at N and E)
+    m1, m2 = np.tan(thD), np.tan(alp)
+    C1 = Ny - m1 * Nx
+    C2 = Ey - m2 * Ex
+    Qx = (C2 - C1) / (m1 - m2)
+    Qy = (m1*C2 - m2*C1) / (m1 - m2)
+
+    # ---------- Apply radial offset to every radius ----------
+    off = radial_offset
+    R_c_o = R_c + off
+    R_t_o = R_t + off
+    R_e_o = R_e + off
+    yP4_o = yP4 + off
+    Ny_o  = Ny  + off
+    yc_o  = yc  + off       # f2 center moves outward by `off`
+    yP3_o = yP3 + off
+    Qy_o  = Qy  + off
+    Ey_o  = Ey  + off
+    # f4 center: (0, r1+R_t) → (0, r1+R_t+off)
+    f4_cy = (r1 + R_t) + off
+    # f5 center: (0, r2+R_t) → (0, r2+R_t+off)
+    f5_cy = (r2 + R_t) + off
+    # NOTE: arc radii (rc, r1, r2) are unchanged; only centers and wall
+    # radii shift.  This produces a parallel offset curve, which is exact
+    # for straight lines and circular arcs.
+
+    x_inj = -L_c            # injector face (throat-centered)
+
+    # ---------- Build entities (mm, throat-centered) ----------
+    M = 1000.0    # m → mm
+    ents = []
+
+    # f1: straight chamber  (x_inj, R_c) → (xc, R_c)
+    ents.append(_dxf_line(layer, x_inj*M, R_c_o*M, xc*M, R_c_o*M))
+
+    # f2: chamber arc  center (xc, yc), radius rc, from P3 to (xc, R_c) [CCW]
+    a_top = 90.0   # (xc, R_c) is directly above center
+    a_P3  = np.degrees(np.arctan2(yP3_o - yc_o, xP3 - xc))
+    ents.append(_dxf_arc(layer, xc*M, yc_o*M, rc*M,
+                         min(a_top, a_P3), max(a_top, a_P3)))
+
+    # f3: linear taper  P3 → P4
+    ents.append(_dxf_line(layer, xP3*M, yP3_o*M, xP4*M, yP4_o*M))
+
+    # f4: throat conv fillet  center (0, r1+R_t), radius r1, from P4 to throat
+    a_P4     = np.degrees(np.arctan2(yP4_o - f4_cy, xP4 - 0.0))
+    a_throat = -90.0     # (0, R_t) is directly below center
+    a_P4_n     = a_P4 + 360.0     if a_P4 < 0     else a_P4
+    a_throat_n = a_throat + 360.0 if a_throat < 0 else a_throat
+    ents.append(_dxf_arc(layer, 0.0, f4_cy*M, r1*M,
+                         min(a_P4_n, a_throat_n), max(a_P4_n, a_throat_n)))
+
+    # f5: throat div fillet  center (0, r2+R_t), radius r2, from throat to N
+    a_N     = np.degrees(np.arctan2(Ny_o - f5_cy, Nx - 0.0))
+    a_thr5  = -90.0
+    a_N_n     = a_N + 360.0    if a_N < 0    else a_N
+    a_thr5_n  = a_thr5 + 360.0 if a_thr5 < 0 else a_thr5
+    ents.append(_dxf_arc(layer, 0.0, f5_cy*M, r2*M,
+                         min(a_N_n, a_thr5_n), max(a_N_n, a_thr5_n)))
+
+    # f6: Bezier bell  →  full control polygon as two LINE entities
+    # OnShape drops standalone POINT entities on custom layers, so instead of
+    # exporting Q as a POINT we draw the canonical Bezier "control polygon":
+    # N → Q  and  Q → E.  Q becomes the explicit meeting vertex of the two
+    # lines and is directly snappable in the sketch.
+    #
+    # In OnShape: Sketch → Spline → Control Point Spline (degree 2), then
+    # click N → Q → E (snap to the line endpoints / intersection vertex).
+    # The resulting curve is mathematically identical to our analytical bell.
+    ents.append(_dxf_line('BELL_POLY', Nx*M, Ny_o*M, Qx*M, Qy_o*M))
+    ents.append(_dxf_line('BELL_POLY', Qx*M, Qy_o*M, Ex*M, Ey_o*M))
+
+    # Also add POINTs at the three control vertices on a CONTROL layer
+    # (in case the OnShape importer is happy with POINTs on this particular
+    # layer name — they're harmless extras if not).
+    ents.append(_dxf_point('CONTROL', Nx*M, Ny_o*M))
+    ents.append(_dxf_point('CONTROL', Qx*M, Qy_o*M))
+    ents.append(_dxf_point('CONTROL', Ex*M, Ey_o*M))
+
+    # ---------- Snap points at every transition ----------
+    key_points = [
+        ('inj',    x_inj, R_c_o),
+        ('xc',     xc,    R_c_o),
+        ('P3',     xP3,   yP3_o),
+        ('P4',     xP4,   yP4_o),
+        ('throat', 0.0,   R_t_o),
+        ('N',      Nx,    Ny_o),
+        ('exit',   Ex,    Ey_o),
+    ]
+    for _, x, y in key_points:
+        ents.append(_dxf_point('POINTS', x*M, y*M))
+
+    return ents, key_points
+
+
+def export_dxf(geom: 'EngineGeometry', chan_geom, out_dir: str = 'exports'):
+    """
+    Export the engine geometry as DXF files for OnShape sketch import.
+
+    Uses native DXF primitives (LINE / ARC / LWPOLYLINE) so each segment is
+    a separately-dimensionable sketch entity, with POINT markers at every
+    transition for snapping.  Coordinates are throat-centered (mm), so the
+    throat lies at (0, R_t) and the X-axis IS the revolve axis.
+
+    Files:
+      engine_contour.dxf  — inner wall as LINE+ARC+ARC+LINE+ARC+ARC+POLY (bell)
+      channel_paths.dxf   — same primitives offset to channel floor / center /
+                            ceiling on three layers
+    """
+    import os
+    os.makedirs(out_dir, exist_ok=True)
+
+    # ---------- 1) Inner-wall contour ----------
+    contour_ents, _ = _contour_primitives(geom, layer='CONTOUR', radial_offset=0.0)
+    contour_dxf = os.path.join(out_dir, 'engine_contour.dxf')
+    _write_dxf(contour_dxf, contour_ents)
+
+    # ---------- 2) Channel paths ----------
+    # Use representative wall thickness and channel height (taper-averaged
+    # at throat) for the offset curves.  Real channel cross-section varies
+    # axially — these are visualization aids, not stress-grade geometry.
+    t_w_arr = np.asarray(chan_geom.chan_t)
+    h_arr   = np.asarray(chan_geom.chan_h)
+    t_rep   = float(np.median(t_w_arr))
+    h_rep   = float(np.median(h_arr))
+
+    floor_off  = t_rep
+    center_off = t_rep + 0.5 * h_rep
+    ceil_off   = t_rep + h_rep
+
+    floor_ents,  _ = _contour_primitives(geom, 'CH_FLOOR',   radial_offset=floor_off)
+    center_ents, _ = _contour_primitives(geom, 'CH_CENTER',  radial_offset=center_off)
+    ceil_ents,   _ = _contour_primitives(geom, 'CH_CEILING', radial_offset=ceil_off)
+
+    paths_dxf = os.path.join(out_dir, 'channel_paths.dxf')
+    _write_dxf(paths_dxf, floor_ents + center_ents + ceil_ents)
+
+    # Print the 3 Bezier control points so the user can manually create an
+    # exact 3-control-point spline in OnShape if the polyline isn't smooth enough.
+    _, _, bell_ctrl = _bell_control_points(geom)
+    print(f"\n--- DXF export (throat-centered, x=0 at throat) ---")
+    print(f"  {contour_dxf}  (LINE/ARC primitives + 7 snap points)")
+    print(f"  {paths_dxf}   (offset {floor_off*1000:.2f}/{center_off*1000:.2f}/"
+          f"{ceil_off*1000:.2f} mm on 3 layers)")
+    print(f"  Bell Bezier control points (mm, throat-centered) — for manual")
+    print(f"  3-pt control-point spline in OnShape if you want the exact curve:")
+    for label, (x, y) in zip(('N (start)', 'Q (ctrl)', 'E (exit) '), bell_ctrl):
+        print(f"    {label}  ({x:9.4f}, {y:9.4f})")
+
+
+def export_csv(geom: 'EngineGeometry', chan_geom, out_dir: str = 'exports',
+               key_stations=None, key_stations_N_throat=None):
+    """
+    Export the engine geometry as three CSV files for OnShape import.
+
+    All x-coordinates are THROAT-CENTERED (x = 0 at the throat plane), so
+    the OnShape sketch origin (0,0) lines up with the throat.
+
+    Files written:
+      engine_contour.csv     — inner wall profile (x, r) for revolve sketch
+      channel_paths.csv      — channel floor / centerline / ceiling radii
+                                (use as sweep paths or revolve sketches)
+      channel_dimensions.csv — full bookkeeping at every axial station:
+                                N, w, h, land, t_w, r_inner
+    """
+    import os
+    import csv
+
+    os.makedirs(out_dir, exist_ok=True)
+    L_c = geom.L_c
+
+    # ---------- 1) inner wall contour ----------
+    x_arr, r_arr = build_contour(geom, dx=2e-4)   # 0.2 mm sampling for smoothness
+    contour_path = os.path.join(out_dir, 'engine_contour.csv')
+    with open(contour_path, 'w', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['x_mm', 'r_mm'])
+        for x, r in zip(x_arr, r_arr):
+            w.writerow([f'{(x - L_c)*1000:.5f}', f'{r*1000:.5f}'])
+
+    # ---------- 2) channel paths (floor, centerline, ceiling) ----------
+    x_j = chan_geom.x_j
+    c_t = chan_geom.chan_t
+    c_h = chan_geom.chan_h
+    paths_path = os.path.join(out_dir, 'channel_paths.csv')
+    with open(paths_path, 'w', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['x_mm', 'r_inner_mm', 'r_floor_mm',
+                    'r_centerline_mm', 'r_ceiling_mm'])
+        for i, x in enumerate(x_j):
+            r_inner = nozzle_radius(x, geom, 1e-3)
+            r_floor = r_inner + c_t[i]
+            r_ceil  = r_floor + c_h[i]
+            r_mid   = 0.5 * (r_floor + r_ceil)
+            w.writerow([f'{(x - L_c)*1000:.5f}',
+                        f'{r_inner*1000:.5f}',
+                        f'{r_floor*1000:.5f}',
+                        f'{r_mid*1000:.5f}',
+                        f'{r_ceil*1000:.5f}'])
+
+    # ---------- 3) channel dimensions at key stations only ----------
+    # If key_stations is provided, use those; otherwise fall back to all stations
+    c_w  = chan_geom.chan_w
+    c_ld = chan_geom.chan_land
+    n_ch = getattr(chan_geom, 'n_chan', None)
+    dims_path = os.path.join(out_dir, 'channel_dimensions.csv')
+
+    if key_stations is not None:
+        # N_throat = number of primary sweep paths (75).  At stations where
+        # channels bifurcate (N > N_throat), we report dimensions from the
+        # perspective of one of the 75 slots: slot_pitch, and within that
+        # slot either 1 channel or 2 sub-channels with a land between them.
+        N_throat = key_stations_N_throat or 75
+        with open(dims_path, 'w', newline='') as f:
+            w = csv.writer(f)
+            w.writerow(['station', 'x_throat_mm', 'r_inner_mm',
+                        'slot_pitch_mm', 'ch_per_slot',
+                        'ch_width_mm', 'ch_height_mm',
+                        'land_mm', 'wall_t_mm',
+                        'r_floor_mm', 'r_ceiling_mm'])
+            for label, x_inj in key_stations:
+                x_tc = (x_inj - L_c) * 1000.0
+                r_inner = nozzle_radius(x_inj, geom, 1e-3)
+                h_val  = float(np.interp(x_inj, x_j, c_h))
+                w_val  = float(np.interp(x_inj, x_j, c_w))
+                ld_val = float(np.interp(x_inj, x_j, c_ld))
+                t_val  = float(np.interp(x_inj, x_j, c_t))
+                n_val  = float(np.interp(x_inj, x_j, n_ch)) if n_ch is not None else float('nan')
+                r_floor = r_inner + t_val
+                r_ceil  = r_floor + h_val
+                slot_pitch = 2.0 * np.pi * r_inner / N_throat
+                ch_per_slot = max(1, round(n_val / N_throat))
+                w.writerow([label, f'{x_tc:.3f}',
+                            f'{r_inner*1000:.3f}',
+                            f'{slot_pitch*1000:.3f}', f'{ch_per_slot}',
+                            f'{w_val*1000:.3f}', f'{h_val*1000:.3f}',
+                            f'{ld_val*1000:.3f}', f'{t_val*1000:.3f}',
+                            f'{r_floor*1000:.3f}', f'{r_ceil*1000:.3f}'])
+        n_rows = len(key_stations)
+    else:
+        with open(dims_path, 'w', newline='') as f:
+            w = csv.writer(f)
+            w.writerow(['x_mm', 'r_inner_mm', 'N_channels',
+                        'width_mm', 'height_mm', 'land_mm', 'wall_t_mm'])
+            for i, x in enumerate(x_j):
+                r_inner = nozzle_radius(x, geom, 1e-3)
+                N_local = float(n_ch[i]) if n_ch is not None else float('nan')
+                w.writerow([f'{(x - L_c)*1000:.5f}',
+                            f'{r_inner*1000:.5f}',
+                            f'{N_local:.3f}',
+                            f'{c_w[i]*1000:.5f}',
+                            f'{c_h[i]*1000:.5f}',
+                            f'{c_ld[i]*1000:.5f}',
+                            f'{c_t[i]*1000:.5f}'])
+        n_rows = len(x_j)
+
+    print(f"\n--- CSV export (throat-centered, x=0 at throat) ---")
+    print(f"  {contour_path}    ({len(x_arr)} points)")
+    print(f"  {paths_path}     ({len(x_j)} points)")
+    print(f"  {dims_path} ({n_rows} stations)")
+
+
+def _segment_breakpoints(geom: EngineGeometry):
+    """
+    Compute the axial breakpoints of the 6 contour segments, in injector-face
+    coordinates (x = 0 at injector face).  Returns a list of
+    (label, x_start, x_end, color) tuples.
+    """
+    R_c   = geom.R_c
+    R_t   = geom.R_t
+    L_c   = geom.L_c
+    th1_r = np.deg2rad(geom.theta1)
+
+    r1 = geom.R_throat_conv
+    r2 = geom.R_throat_div
+    rc = geom.R_chamber
+
+    # Throat-centric coordinates (x' = x - L_c)
+    ang1_start = -(90.0 + geom.theta1) * np.pi/180.0
+    xP4 = r1 * np.cos(ang1_start)
+    yP4 = r1 * np.sin(ang1_start) + (r1 + R_t)
+
+    ang2_end = (geom.thetaD - 90.0) * np.pi/180.0
+    Nx = r2 * np.cos(ang2_end)
+
+    mc = -np.tan(th1_r)
+    bc = yP4 - mc * xP4
+    yc = R_c - rc
+    s  = np.sqrt(mc*mc + 1.0)
+    xc_plus  = (yc - bc + rc*s)/mc
+    xc_minus = (yc - bc - rc*s)/mc
+    xc = xc_minus if xc_minus < xc_plus else xc_plus
+
+    S = mc*xc - yc + bc
+    xP3 = xc - mc * S / (mc*mc + 1.0)
+
+    # Convert to injector-face coordinates and engine-end exit
+    x_chamber_end  = L_c + xc          # straight chamber → big arc
+    x_arc_end      = L_c + xP3         # big arc → linear taper
+    x_taper_end    = L_c + xP4         # linear taper → throat-conv fillet
+    x_throat       = L_c               # throat
+    x_div_fil_end  = L_c + Nx          # throat-div fillet → bell
+    x_exit         = L_c + geom.L_nozzle
+
+    return [
+        ("f1: straight chamber",       0.0,            x_chamber_end, "#1f77b4"),
+        ("f2: chamber arc R_chamber",  x_chamber_end,  x_arc_end,     "#ff7f0e"),
+        ("f3: linear taper θ1",        x_arc_end,      x_taper_end,   "#2ca02c"),
+        ("f4: throat conv fillet",     x_taper_end,    x_throat,      "#d62728"),
+        ("f5: throat div fillet",      x_throat,       x_div_fil_end, "#9467bd"),
+        ("f6: Bezier bell",            x_div_fil_end,  x_exit,        "#8c564b"),
+    ]
+
+
 def plot_contour(geom: EngineGeometry, dx: float = 5e-4):
-    """Plot the engine inner-wall profile (upper half shown)."""
-    x_arr, r_arr = build_contour(geom, dx)
+    """Plot the engine inner-wall profile with color-coded segments."""
+    fig, ax = plt.subplots(figsize=(12, 4.5))
 
-    fig, ax = plt.subplots(figsize=(12, 4))
-    ax.plot(x_arr * 1000,  r_arr * 1000, 'b-', linewidth=1.5)
-    ax.plot(x_arr * 1000, -r_arr * 1000, 'b-', linewidth=1.5)
-    ax.fill_between(x_arr * 1000,  r_arr * 1000, -r_arr * 1000, alpha=0.15)
+    segs = _segment_breakpoints(geom)
+    for label, x0, x1, color in segs:
+        if x1 - x0 < 1e-9:
+            continue
+        n = max(int(np.ceil((x1 - x0) / dx)) + 1, 2)
+        xs = np.linspace(x0, x1, n)
+        rs = np.array([nozzle_radius(x, geom, dx) for x in xs])
+        ax.plot(xs * 1000,  rs * 1000, '-', color=color, linewidth=2.0, label=label)
+        ax.plot(xs * 1000, -rs * 1000, '-', color=color, linewidth=2.0)
+        ax.fill_between(xs * 1000, rs * 1000, -rs * 1000, color=color, alpha=0.10)
 
-    ax.axvline(geom.L_c * 1000, color='r', linestyle='--',
-               linewidth=0.8, label=f'Throat  x={geom.L_c*1000:.1f} mm')
-    ax.axvline(geom.L_e * 1000, color='g', linestyle=':',
-               linewidth=0.8, label=f'Conv. start  x={geom.L_e*1000:.1f} mm')
+    ax.axvline(geom.L_c * 1000, color='k', linestyle='--', linewidth=0.8,
+               label=f'Throat x={geom.L_c*1000:.1f} mm')
+
+    # Annotate the curvature radii
+    info = (f"R_chamber     = {geom.R_chamber*1000:6.2f} mm\n"
+            f"R_throat_conv = {geom.R_throat_conv*1000:6.2f} mm\n"
+            f"R_throat_div  = {geom.R_throat_div*1000:6.2f} mm\n"
+            f"R_t           = {geom.R_t*1000:6.2f} mm")
+    ax.text(0.02, 0.02, info, transform=ax.transAxes, fontsize=8,
+            family='monospace', va='bottom',
+            bbox=dict(boxstyle='round,pad=0.4', facecolor='white', alpha=0.85))
 
     ax.set_xlabel('Axial position [mm]')
     ax.set_ylabel('Radius [mm]')
-    ax.set_title('Engine Inner-Wall Contour')
-    ax.legend(fontsize=8)
+    ax.set_title('Engine Inner-Wall Contour (segments)')
+    ax.legend(fontsize=7, loc='upper right')
     ax.set_aspect('equal')
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.show(block=True)
+    plt.show(block=False)
