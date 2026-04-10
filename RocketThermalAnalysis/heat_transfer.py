@@ -490,6 +490,14 @@ def _coolant_heat(x: float, T_cw: float, T_cool: float, P_cool: float,
         else:
             T_ratio = T_cool / max(T_cw, T_cool + 1.0)   # clip to avoid div/0
             Nu = 0.021 * Re**0.8 * Pr**0.4 * (0.64 + 0.36 * T_ratio)
+    elif fluid == "Ethanol" or fluid.startswith("Ethanol"):
+        # Plain Dittus-Boelter — Ponomarenko 2012 (RPA Thermal Analysis paper),
+        # p.15: "Nu = 0.023 Re^0.8 Pr^0.4 (for other coolants)".  This is what
+        # RPA actually uses for ethanol; no temperature-ratio correction.
+        if Re < 2300.0:
+            Nu = 4.36
+        else:
+            Nu = 0.023 * Re**0.8 * Pr**0.4
     elif fluid == "Methane":
         # Ponomarenko methane correlation (RPA):
         #   Nu = 0.0185 Re^0.8 Pr^0.4 (T_c/T_wc)^0.1
@@ -498,8 +506,9 @@ def _coolant_heat(x: float, T_cw: float, T_cool: float, P_cool: float,
         else:
             T_ratio = T_cool / max(T_cw, T_cool + 1.0)
             Nu = 0.0185 * Re**0.8 * Pr**0.4 * T_ratio**0.1
-    else:
-        # Niino (1982) for cryogenic hydrogen
+    elif fluid == "Hydrogen":
+        # Niino (1982) for cryogenic hydrogen — strong density variation
+        # plus roughness amplification.  ONLY appropriate for H2.
         f_sm    = _colebrook_f(Re, Dh, 0.0)       # smooth-pipe reference
         xi      = f / f_sm if f_sm > 0.0 else 1.0
         eps_s   = Re * (e / Dh) * np.sqrt(f / 8.0)
@@ -519,6 +528,12 @@ def _coolant_heat(x: float, T_cw: float, T_cool: float, P_cool: float,
 
         Nu = ((f / 8.0) * Re * Pr * (T_cool / T_cw)**0.55
               / (1.0 + np.sqrt(f / 8.0) * (B - 8.48))) * C1 * C2 * C3
+    else:
+        # Generic fallback: Dittus-Boelter (heating, n=0.4)
+        if Re < 2300.0:
+            Nu = 4.36
+        else:
+            Nu = 0.023 * Re**0.8 * Pr**0.4
 
     h_cool = Nu * cond / Dh
 
@@ -602,13 +617,21 @@ def _coolant_htc(x: float, T_cw: float, T_cool: float, P_cool: float,
         else:
             T_ratio = T_cool / max(T_cw, T_cool + 1.0)
             Nu = 0.021 * Re**0.8 * Pr**0.4 * (0.64 + 0.36 * T_ratio)
+    elif fluid == "Ethanol" or fluid.startswith("Ethanol"):
+        # Plain Dittus-Boelter — Ponomarenko 2012 (RPA Thermal Analysis paper),
+        # p.15: "Nu = 0.023 Re^0.8 Pr^0.4 (for other coolants)".  This is what
+        # RPA actually uses for ethanol; no temperature-ratio correction.
+        if Re < 2300.0:
+            Nu = 4.36
+        else:
+            Nu = 0.023 * Re**0.8 * Pr**0.4
     elif fluid == "Methane":
         if Re < 2300.0:
             Nu = 4.36
         else:
             T_ratio = T_cool / max(T_cw, T_cool + 1.0)
             Nu = 0.0185 * Re**0.8 * Pr**0.4 * T_ratio**0.1
-    else:
+    elif fluid == "Hydrogen":
         f_sm  = _colebrook_f(Re, Dh, 0.0)
         xi    = f / f_sm if f_sm > 0.0 else 1.0
         eps_s = Re * (e / Dh) * np.sqrt(f / 8.0)
@@ -625,6 +648,12 @@ def _coolant_htc(x: float, T_cw: float, T_cool: float, P_cool: float,
             C3 = 1.0
         Nu = ((f / 8.0) * Re * Pr * (T_cool / T_cw)**0.55
               / (1.0 + np.sqrt(f / 8.0) * (B - 8.48))) * C1 * C2 * C3
+    else:
+        # Generic fallback: Dittus-Boelter (heating, n=0.4)
+        if Re < 2300.0:
+            Nu = 4.36
+        else:
+            Nu = 0.023 * Re**0.8 * Pr**0.4
 
     h_cool = Nu * cond / Dh
     return h_cool, Re, Nu, Dh, v, rho, f, props
@@ -1148,6 +1177,9 @@ def solve_thermal(flow: FlowSolution,
 
     n_iters = 0
 
+    # Index of the geometric throat (smallest area) — used for debug dump
+    _i_throat = int(np.argmin(flow.A))
+
     # Build T_aw_eff lookup — None means bare Bartz T_aw used at each station
     _T_aw_eff_arr = T_aw_eff  # may be None (no film) or np.ndarray (film active)
 
@@ -1264,6 +1296,23 @@ def solve_thermal(flow: FlowSolution,
             Dh_arr[k]     = Dh
             v_arr[k]      = v
             rho_arr[k]    = rho
+
+            # ----- DEBUG DUMP at the throat (every iteration) -----
+            if k == _i_throat:
+                from coolant_props import get_coolant_props as _gcp
+                _props_dbg = _gcp(T_cool, P_cool, config.coolant)
+                _Pr_dbg    = _props_dbg.viscosity * _props_dbg.Cp / _props_dbg.conductivity
+                _chan_w_dbg, _chan_h_dbg, _chan_t_dbg, _chan_land_dbg = chan_geom.at(x)
+                print(f"  [DBG throat it{outer+1}] x={x*1000:.1f}mm  N={mdot_per_ch_k*1000:.3f}g/s/ch")
+                print(f"    geom:  w={_chan_w_dbg*1e3:.3f}mm  h={_chan_h_dbg*1e3:.3f}mm  "
+                      f"land={_chan_land_dbg*1e3:.3f}mm  Dh={Dh*1e3:.4f}mm")
+                print(f"    state: T_c={T_cool:.1f}K  P_c={P_cool/1e6:.4f}MPa  "
+                      f"T_cw={T_cw_arr[k]:.1f}K  T_hw={T_hw_arr[k]:.1f}K")
+                print(f"    props: rho={_props_dbg.rho:.2f}  mu={_props_dbg.viscosity*1e6:.2f}e-6Pa·s  "
+                      f"k={_props_dbg.conductivity:.4f}W/m/K  cp={_props_dbg.Cp:.1f}J/kg/K  Pr={_Pr_dbg:.3f}")
+                print(f"    flow:  v={v:.2f}m/s  Re={Re:.0f}  Nu={Nu:.1f}")
+                print(f"    HTC:   h_cool={h_c/1000:.2f}kW/m²K  h_gas={h_g/1000:.3f}kW/m²K  "
+                      f"q_gas={hf/1e6:.3f}MW/m²")
 
             # Advance coolant toward injector
             T_cool    = T_cool_new

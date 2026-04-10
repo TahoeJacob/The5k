@@ -17,20 +17,21 @@ from film_cooling import compute_film_taw
 
 
 # =============================================================================
-# ENGINE CONFIG — edit this section
+# 5kN RP-1 / LOX — first survivable Al design point (22% film, 75/150 channels)
+# Peak T_hw ≈ 848 K with simplified Bartz (~7 K margin to 6061 melt = 855 K)
 # =============================================================================
-config = EngineConfig(
+config_5kN_RP1 = EngineConfig(
     # Propellants
     fuel        = "RP-1",
     oxidizer    = "LOX",
-    coolant     = "RP1",        # CoolProp name (used later by coolant_props)
+    coolant     = "RP1",        # Huber 4-component RP-1 surrogate (REFPROP)
 
     # Performance
-    P_c   = 20.0e5,             # 60 bar [Pa]
+    P_c   = 20.0e5,             # 20 bar [Pa]
     F_vac = 5500.0,             # [N]
 
-    # O/F — uncomment / set both for sweep + analysis
-    OF        = 2.0,
+    # O/F
+    OF        = 1.8,
     OF_sweep  = None,
 
     # CEA
@@ -59,7 +60,7 @@ config = EngineConfig(
     P_coolant_inlet = 35.0e5,   # [Pa]
     mdot_coolant    = None,     # computed from OF + mdot_total
 
-    # Channels — bifurcating: 40 at throat, splits to 80 in chamber/exit
+    # Channels — bifurcating: 75 at throat, splits to 150 in chamber/exit
     N_channels             = 40,    # fallback (used if throat/chamber not set)
     N_channels_throat      = 75,
     N_channels_chamber     = 150,
@@ -72,9 +73,9 @@ config = EngineConfig(
     chan_h_chamber = 0.8e-3,
     chan_h_exit    = 0.8e-3,
 
-    # Film Cooling
-    film_fraction  = 0.22,   # 5% of fuel flow as film (target: as low as possible)
-    film_inject_x  = 0.0,    # inject at injector face
+    # Film Cooling — RP-1 path needs ~22% to barely survive the throat
+    film_fraction  = 0.22,
+    film_inject_x  = 0.0,
     film_coolant   = "RP1",
     film_T_inlet   = 400.0,
     film_Kt        = 0.0013, # turbulent mixing intensity (Vasiliev 1993, range 0.0005-0.002)
@@ -83,6 +84,173 @@ config = EngineConfig(
     use_integral_bl=False,
     C_bartz=0.026,          # Thin BL calibration (matches RPA's simplified Bartz)
 )
+
+
+# =============================================================================
+# 5kN ETHANOL / LOX — much higher thermal margin than RP-1
+# Peak T_hw ≈ 565 K with 10% film cooling (~290 K margin to 6061 melt = 855 K)
+# OF=1.6 gives 99% of peak Isp at 30 K cooler T_c than peak Isp at OF=1.70
+# =============================================================================
+config_5kN_Ethanol = EngineConfig(
+    # Propellants
+    fuel        = "Ethanol",
+    oxidizer    = "LOX",
+    coolant     = "Ethanol95",  # 95 wt% ethanol / 5 wt% water (matches RPA)
+
+    # Performance
+    P_c   = 20.0e5,             # 20 bar [Pa]
+    F_vac = 5500.0,             # [N]
+
+    # O/F — ethanol/LOX peak Isp at 1.70, slightly fuel-rich for cooling
+    OF        = 1.6,
+    OF_sweep  = None,           # set to (0.8, 2.6, 0.05) to sweep past stoich (~2.08)
+
+    # CEA
+    frozen = False,
+
+    # Geometry
+    exp_ratio   = 8.0,
+    cont_ratio  = 6.0,
+    L_star      = 1.143,        # 45 inch — typical hydrocarbon/LOX
+
+    # Nozzle contour
+    theta1  = 30.0,
+    thetaD  = 30.0,
+    thetaE  = 12.0,
+    R_chamber_mult     = 1.5,
+    R_throat_conv_mult = 1.0,
+    R_throat_div_mult  = 0.382,
+
+    # Wall material (6061-T6 Al)
+    wall_k         = 167.0,
+    wall_roughness = 12.0e-6,   # SLM AlSi10Mg as-printed
+    wall_melt_T    = 855.0,
+
+    # Coolant inlet (counter-current from nozzle exit)
+    T_coolant_inlet = 290.0,
+    P_coolant_inlet = 35.0e5,
+    mdot_coolant    = None,
+
+    # Channels — same bifurcating layout as RP-1 baseline for direct comparison
+    N_channels             = 40,
+    N_channels_throat      = 70,
+    N_channels_chamber     = 140,
+    channel_split_r_ratio  = 2.0,
+    dx                     = 1e-3,
+
+    chan_h_throat  = 0.6e-3,
+    chan_h_chamber = 0.8e-3,
+    chan_h_exit    = 0.8e-3,
+
+    # Film cooling — ethanol allows much lower film fraction than RP-1
+    film_fraction  = 0.10,
+    film_inject_x  = 0.0,
+    film_coolant   = "Ethanol",
+    film_T_inlet   = 350.0,     # below ethanol boil at coolant pressure
+    film_Kt        = 0.0013,
+
+    wall_2d=True,
+    use_integral_bl=False,
+    C_bartz=0.026,
+)
+
+
+# =============================================================================
+# 5kN RP-1 / LOX — INCONEL 718 (SLM) variant for material trade study
+# Trades 9× lower k for ~10× higher hot strength.  Expect peak T_hw to roughly
+# double vs the AlSi10Mg case (because the 9× higher wall thermal resistance
+# dominates), but IN718 still has σ_y ≈ 700 MPa at 1000 K — comfortably above
+# anything thermal stress will throw at it.  Two consequences:
+#
+#  1. We can drop film cooling hard (5% vs 22% for Al — IN718 doesn't care
+#     about a 1300 K hot wall, so we don't need to cool it down to 800 K).
+#  2. We want a THINNER channel floor — IN718's k is so bad that the wall
+#     dominates the thermal circuit, and IN718's strength lets us go to
+#     ~0.5 mm SLM-printable instead of 0.9 mm for Al.  ⚠️  chan_t is set in
+#     run() (line ~249), not in this config block — edit it there to 0.5e-3
+#     when running this config.
+#
+# To swap to other 3D-printable materials, change wall_k / wall_melt_T /
+# wall_roughness:
+#   GRCop-42 (Cu-Cr-Nb, the high-k path): k=320, melt=1356, Ra=10e-6
+#       SpaceX Raptor / NASA LCUSP. Best cooling, weakest, life-limited.
+#   Inconel 625:                          k=10,  melt=1623, Ra=15e-6
+#       Better corrosion/printability than 718, slightly worse k.
+#   Haynes 282:                           k=11,  melt=1573, Ra=15e-6
+#       Newest hot-section nickel, retains strength better than 718 above 900 K.
+# =============================================================================
+config_5kN_RP1_IN718 = EngineConfig(
+    # Propellants
+    fuel        = "RP-1",
+    oxidizer    = "LOX",
+    coolant     = "RP1",
+
+    # Performance
+    P_c   = 20.0e5,
+    F_vac = 5500.0,
+
+    # O/F — IN718 hot wall margin lets us push closer to peak Isp at OF≈2.3
+    OF        = 2.0,
+    OF_sweep  = None,
+
+    frozen = False,
+
+    # Geometry — same contour as Al baseline for direct comparison
+    exp_ratio   = 8.0,
+    cont_ratio  = 6.0,
+    L_star      = 1.143,
+
+    theta1  = 30.0,
+    thetaD  = 30.0,
+    thetaE  = 12.0,
+    R_chamber_mult     = 1.5,
+    R_throat_conv_mult = 1.0,
+    R_throat_div_mult  = 0.382,
+
+    # Wall material — INCONEL 718 (SLM, solution + age treated AMS 5663)
+    #   k(295K) ≈ 11.4, k(800K) ≈ 22  → use ~16 W/m·K mean across operating T
+    #   σ_y(295K) = 1100 MPa, σ_y(873K) ≈ 900 MPa, σ_y(1000K) ≈ 700 MPa
+    #   T_melt = 1609 K ; design limit ~1450 K (creep/oxidation)
+    wall_k         = 16.0,
+    wall_roughness = 15.0e-6,   # SLM IN718 as-printed Ra ~12–18 µm
+    wall_melt_T    = 1450.0,    # conservative design limit, not actual melt
+
+    # Coolant inlet
+    T_coolant_inlet = 290.0,
+    P_coolant_inlet = 35.0e5,
+    mdot_coolant    = None,
+
+    # Channels — same bifurcating layout as Al baseline.  IN718 strength
+    # actually permits MORE channels (smaller w → lower σ_p), but keep N
+    # equal for now to isolate the material effect.
+    N_channels             = 40,
+    N_channels_throat      = 75,
+    N_channels_chamber     = 150,
+    channel_split_r_ratio  = 2.0,
+    dx                     = 1e-3,
+
+    # Tapered channel height — keep same as Al for the first run
+    chan_h_throat  = 0.6e-3,
+    chan_h_chamber = 0.8e-3,
+    chan_h_exit    = 0.8e-3,
+
+    # Film cooling — IN718 can survive ~1300 K hot wall, drop film hard
+    film_fraction  = 0.15,      # 5% vs 22% for Al — IN718 doesn't need it
+    film_inject_x  = 0.0,
+    film_coolant   = "RP1",
+    film_T_inlet   = 400.0,
+    film_Kt        = 0.0013,
+
+    wall_2d=True,
+    use_integral_bl=False,
+    C_bartz=0.026,
+)
+
+
+# =============================================================================
+# ACTIVE CONFIG — pick which engine main.py runs
+# =============================================================================
+config = config_5kN_RP1_IN718
 
 
 
