@@ -866,6 +866,21 @@ def _build_wall_2d(x_nodes, y_nodes, chan_w_half, chan_t,
                 rows.append(eq); cols.append(node_map[(i, j-1)])
                 vals.append(coeff_ghost)
                 diag -= coeff_ghost
+            elif (j > 0 and 0 <= j - 1 < ny
+                    and 0 <= i < nx and is_void[j - 1, i]):
+                # ROOF-ROW special case (closeout_t == 0): this node sits at
+                # y = chan_t + chan_h with void directly below (channel) AND
+                # the top of the grid directly above (adiabatic).  Both y
+                # ghosts resolve to the Robin ghost T_{j-1} = T_j(1-Bi) +
+                # Bi·T_cool, so the y-stencil contributes DOUBLE the Robin.
+                # The j-1 _add_coupling call already added one half; this
+                # branch adds the second half from the adiabatic-top
+                # reflection.  Without this, the roof ran at half-strength
+                # cooling, the field equilibrated hotter, and 2-D over-
+                # predicted T_hw by ~300 K vs the 1-D path on IN718/Cu.
+                Bi = h_cool * dy_u / k_w
+                diag -= coeff_ghost * Bi
+                b[eq] -= coeff_ghost * Bi * T_cool
             if h_ext > 0.0:
                 Bi = h_ext * dy_u / k_w
                 diag -= coeff_ghost * 2.0 * Bi
@@ -883,10 +898,19 @@ def _build_wall_2d(x_nodes, y_nodes, chan_w_half, chan_t,
 
 
 def _extract_wall_results(T_field, node_map, solid_nodes, x_nodes, y_nodes,
-                          is_void, chan_w_half, chan_t, h_cool, T_cool):
+                          is_void, chan_w_half, chan_t, h_cool, T_cool,
+                          chan_h=None):
     """
     Extract T_hw (avg/max at gas side), T_cw (avg over channel walls),
     and q_cool per unit axial length for the HALF-cell [W/m].
+
+    All three wetted channel surfaces are integrated:
+      * base  (y = chan_t,           x < chan_w_half)  — hot side
+      * side  (x = chan_w_half,      chan_t < y < chan_t+chan_h)
+      * roof  (y = chan_t + chan_h,  x < chan_w_half)  — closeout side
+    Omitting the roof (prior bug) under-counted q_cool at low k_w, so the
+    counter-current march delivered a too-cold coolant downstream and gave
+    optimistic T_hw.  `chan_h` must be supplied to locate the roof row.
     """
     nx = len(x_nodes)
     ny = len(y_nodes)
@@ -953,6 +977,27 @@ def _extract_wall_results(T_field, node_map, solid_nodes, x_nodes, y_nodes,
             T_cw_wt  += w
             q_cool_half += h_cool * (T_val - T_cool) * w
 
+    # Channel roof (y index where y_nodes ≈ chan_t + chan_h).  Required for
+    # correct energy balance at low k_w — at high k this surface contributes
+    # little, at IN718 levels it carries 10–20 % of q_cool.
+    if chan_h is not None:
+        y_roof = chan_t + chan_h
+        j_roof = np.searchsorted(y_nodes, y_roof - 1e-12)
+        if j_roof < ny and abs(y_nodes[j_roof] - y_roof) < 1e-10:
+            for i in range(nx):
+                if x_nodes[i] >= chan_w_half - 1e-12:
+                    break  # only x < chan_w_half wets the void
+                if (i, j_roof) not in node_map:
+                    continue
+                T_val = T_field[node_map[(i, j_roof)]]
+                if i == 0:
+                    w = 0.5 * (x_nodes[1] - x_nodes[0])
+                else:
+                    w = 0.5 * (x_nodes[min(i+1, nx-1)] - x_nodes[max(i-1, 0)])
+                T_cw_sum += T_val * w
+                T_cw_wt  += w
+                q_cool_half += h_cool * (T_val - T_cool) * w
+
     T_cw_avg = T_cw_sum / T_cw_wt if T_cw_wt > 0 else T_hw_avg
 
     return T_hw_avg, T_hw_max, T_cw_avg, q_cool_half
@@ -1018,12 +1063,13 @@ def _solve_wall_2d(x: float, M: float, A: float,
         # Solve 2-D wall
         T_field, node_map, solid_nodes, xn, yn, is_void = _build_wall_2d(
             x_nodes, y_nodes, chan_w_half, chan_t_val,
-            h_g, T_aw_v, h_c, T_cool, config.wall_k)
+            h_g, T_aw_v, h_c, T_cool, config.wall_k,
+            chan_h=chan_h)
 
         # Extract results
         T_hw_new, T_hw_max, T_cw_new, q_half = _extract_wall_results(
             T_field, node_map, solid_nodes, xn, yn, is_void,
-            chan_w_half, chan_t_val, h_c, T_cool)
+            chan_w_half, chan_t_val, h_c, T_cool, chan_h=chan_h)
 
         if abs(T_hw_new - T_hw) < tol and abs(T_cw_new - T_cw) < tol:
             T_hw, T_cw = T_hw_new, T_cw_new

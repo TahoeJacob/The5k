@@ -6,11 +6,13 @@ then run:  python main.py
 
 import numpy as np
 import matplotlib.pyplot as plt
+from dataclasses import replace
 
 from config import EngineConfig
 from cea_interface import get_cea_for_analysis
 from geometry import (size_engine, plot_contour, nozzle_radius,
-                      export_csv, export_dxf, _segment_breakpoints)
+                      export_csv, export_dxf, export_land_dxf,
+                      _segment_breakpoints)
 from flow_solver import solve_flow
 from heat_transfer import ChannelGeometry, solve_thermal, plot_thermal
 from film_cooling import compute_film_taw
@@ -193,7 +195,7 @@ config_5kN_RP1_IN718 = EngineConfig(
     OF        = 2.0,
     OF_sweep  = None,
 
-    frozen = False,
+    frozen = True,
 
     # Geometry — same contour as Al baseline for direct comparison
     exp_ratio   = 8.0,
@@ -220,22 +222,37 @@ config_5kN_RP1_IN718 = EngineConfig(
     P_coolant_inlet = 35.0e5,
     mdot_coolant    = None,
 
-    # Channels — same bifurcating layout as Al baseline.  IN718 strength
-    # actually permits MORE channels (smaller w → lower σ_p), but keep N
-    # equal for now to isolate the material effect.
-    N_channels             = 40,
-    N_channels_throat      = 75,
-    N_channels_chamber     = 150,
+    # Channels — depowdering-friendly layout validated by the user's 3D-print
+    # flatmate (print-for-living rocket engineer): no feature smaller than
+    # 1.5 mm in width, height, OR land.  Aggressive slimming vs 60/120 to
+    # eliminate any risk of trapped powder in the internal channels.
+    #
+    # Throat circumference at channel base (r_t + chan_t = 22.61 + 0.70 = 23.31 mm)
+    #   = 2π · 23.31 = 146.5 mm
+    # With N=30 and land=3.0 mm:  pitch = 4.88 mm → w = 1.88 mm ✓ (RPA runs
+    # with land=3.46 at the throat → w=1.52; our constant-land gives slightly
+    # wider/slower coolant, pessimistic on cooling.)
+    # Chamber circumference (r_c + chan_t = 55.39 + 0.70 = 56.09 mm)
+    #   = 2π · 56.09 = 352.5 mm
+    # With N=60 (bifurcation split):  pitch = 5.87 mm → w = 2.87 mm ✓
+    N_channels             = 30,
+    N_channels_throat      = 30,
+    N_channels_chamber     = 60,
     channel_split_r_ratio  = 2.0,
     dx                     = 1e-3,
 
-    # Tapered channel height — keep same as Al for the first run
-    chan_h_throat  = 0.6e-3,
-    chan_h_chamber = 0.8e-3,
-    chan_h_exit    = 0.8e-3,
+    # Uniform 1.5 mm channel height — depowdering minimum per flatmate
+    # guidance.  Higher channel → lower coolant velocity → lower h_cool,
+    # but CuCrZr (if we go that way) doesn't need h_cool because the wall
+    # drop is tiny; IN718 eats the small cooling hit because the wall drop
+    # at 0.7 mm is already manageable.
+    # (chan_land is set in run() at line ~342; set it to 3.0 mm there.)
+    chan_h_throat  = 1.5e-3,
+    chan_h_chamber = 1.5e-3,
+    chan_h_exit    = 1.5e-3,
 
-    # Film cooling — IN718 can survive ~1300 K hot wall, drop film hard
-    film_fraction  = 0.15,      # 5% vs 22% for Al — IN718 doesn't need it
+    # Film cooling — bumped 15 → 20% to stay under IN718 creep limit (970 K)
+    film_fraction  = 0.20,
     film_inject_x  = 0.0,
     film_coolant   = "RP1",
     film_T_inlet   = 400.0,
@@ -248,9 +265,39 @@ config_5kN_RP1_IN718 = EngineConfig(
 
 
 # =============================================================================
+# 5kN RP-1/LOX — CuCrZr LPBF variant
+# =============================================================================
+# Same contour, OF, coolant circuit, film fraction as the IN718 block.  Only
+# the wall material changes.  CuCrZr (LPBF, precipitation-aged) at ~200 W/m·K
+# (derated from wrought 320 for printed porosity; Grim AM powder cert gives
+# 0.54 % Cr and 132 ppm O — a conservative derate).
+#
+# Target: no film cooling if possible, given 12× higher k vs IN718.
+# Constraints to watch:
+#   * T_cw < 700 K (RP-1 coking ceiling — the dominant limit, not Cu strength)
+#   * T_hw < 800 K (CuCrZr yield cliff onset)
+#   * Same 1.5 mm depowdering floor on every channel feature
+config_5kN_RP1_CuCrZr = replace(
+    config_5kN_RP1_IN718,
+    # Wall — CuCrZr LPBF aged, conservative printed-k derate
+    wall_k         = 240.0,   # W/m·K — matches RPA NoFilm validation file (printer's conservative minimum)
+    wall_roughness = 12.0e-6, # LPBF Cu as-printed ~10–15 µm Ra
+    wall_melt_T    = 1320.0,  # CuCrZr solidus; design limit lower (see below)
+
+    # Film cooling: we believe Cu can do it bare.  Start at 0 %, bump only
+    # if T_cw > 700 K (coking) or T_hw > 800 K (strength).
+    film_fraction  = 0.00,
+
+    # 2-D wall conduction — roof-row Robin BC fix applied (was half-strength
+    # at closeout_t=0, causing +293 K T_hw over-prediction vs 1-D / RPA).
+    wall_2d        = True,
+)
+
+
+# =============================================================================
 # ACTIVE CONFIG — pick which engine main.py runs
 # =============================================================================
-config = config_5kN_RP1_IN718
+config = config_5kN_RP1_CuCrZr
 
 
 
@@ -338,8 +385,36 @@ def run():
 
     # Define Cooling Channel Geometry
     x_j = np.arange(0, geom.L_c + geom.L_nozzle, config.dx) # Create slices at each dx
-    chan_t = np.full(shape=(len(x_j),), fill_value=0.9e-3) # 0.9mm Constant thickness channel at each slice
-    chan_land = np.full(shape=(len(x_j),), fill_value= 1.0e-3) # 1.0mm Constant land width channel at each slice
+    chan_t = np.full(shape=(len(x_j),), fill_value=0.9e-3) # 0.9 mm inner wall — matches RPA CuCrZr NoFilm validation file
+
+    # --- Tunable land-width profile -------------------------------------------
+    # Friend's approach: set land width at key axial stations; channel width
+    # falls out as  w(x) = 2π·r(x) / N(x) - land(x).  Locally *increasing* land
+    # shrinks w, accelerating the coolant and boosting h_cool where you need
+    # more cooling (typically just upstream of the throat).
+    #
+    # Keypoints are (x_mm_from_injector, land_mm). Values between keypoints are
+    # linearly interpolated; outside the range they clamp to the end values.
+    # Throat sits at x = L_c · 1000 mm (printed below). Keep every local land
+    # ≥1.5 mm and the resulting chan_w ≥1.5 mm for depowdering.
+    L_c_mm        = geom.L_c * 1000.0
+    L_total_mm    = (geom.L_c + geom.L_nozzle) * 1000.0
+    # Matched to RPA 5kN_CuCrZr_NoFilm.txt: chamber land ≈ 3.8 mm at N=60,
+    # narrowing through the convergent section, throat ≈ 2.8 mm at N=30,
+    # recovering downstream in the divergent.
+    land_keypoints_mm = [
+        (0.0,              3.8),   # injector face, N=60
+        (L_c_mm - 40.0,    3.8),   # still cylindrical
+        (L_c_mm - 30.0,    3.2),   # convergent midpoint
+        (L_c_mm - 10.0,    2.8),   # end of Sec1, land narrows with radius
+        (L_c_mm,           2.8),   # throat, N=30
+        (L_c_mm + 10.0,    2.9),   # just downstream, opening back up
+        (L_c_mm + 30.0,    3.5),   # divergent midpoint
+        (L_total_mm,       4.5),   # exit
+    ]
+    _kx = np.array([k[0] for k in land_keypoints_mm]) * 1e-3
+    _kl = np.array([k[1] for k in land_keypoints_mm]) * 1e-3
+    chan_land = np.interp(x_j, _kx, _kl)
     chan_w = np.zeros(len(x_j)) # Pre-fill in chan_w for each slice with a zero
     chan_h = np.zeros(len(x_j))
     n_chan_per_station = np.zeros(len(x_j), dtype=int)
@@ -412,6 +487,14 @@ def run():
         circ = 2*np.pi*r # Calculate the circumference of the slice
         avail_width = circ/N_local # Calculate available width at each slice
         chan_w[i] = avail_width - chan_land[i] # Calculate width at each slice
+
+    # Guard rail: warn if tapered land profile pushed any channel width below
+    # the 1.5 mm SLM depowder floor.
+    _w_min_mm = chan_w.min() * 1000.0
+    if _w_min_mm < 1.5:
+        _ix = int(np.argmin(chan_w))
+        print(f"  !! WARNING: min chan_w = {_w_min_mm:.3f} mm at x={x_j[_ix]*1000:.1f} mm "
+              f"(land={chan_land[_ix]*1000:.3f} mm) — below 1.5 mm depowder floor")
 
     # Report bifurcation
     if N_chamber != N_throat:
@@ -534,6 +617,7 @@ def run():
     export_csv(geom, chan_geom, out_dir='exports',
                key_stations=key_stations, key_stations_N_throat=N_throat)
     export_dxf(geom, chan_geom, out_dir='exports')
+    export_land_dxf(geom, chan_geom, out_dir='exports')
 
     # chan_geom = ChannelGeometry(
     #     x_j       = np.array([0.0, 0.0127, 0.0315, 0.0508, 0.0762, 0.1016, 0.127, 0.1524, 0.1778, 0.2032, 0.2286, 0.254, 0.2667, 0.2794, 0.2921, 0.3048, 0.3175, 0.32512, 0.3302, 0.3429, 0.3556, 0.381, 0.4064, 0.4318, 0.4572, 0.4826, 0.508, 0.5334, 0.5588, 0.6027,]),

@@ -670,6 +670,103 @@ def export_dxf(geom: 'EngineGeometry', chan_geom, out_dir: str = 'exports'):
         print(f"    {label}  ({x:9.4f}, {y:9.4f})")
 
 
+def export_land_dxf(geom: 'EngineGeometry', chan_geom, out_dir: str = 'exports'):
+    """
+    Export a DXF specifically for the 'sweep a land rectangle then cap it'
+    CAD workflow used on the 5kN IN718 chamber:
+
+      1. SWEEP PATH  — meridional curve at r = r_inner + chan_t  (land base
+         = channel floor radius).  This is the axial path a single land
+         follows.  In OnShape you'll sweep N of them around the chamber.
+      2. PROFILE RECT — a single closed-polyline rectangle of
+         (land_w × chan_h) already drawn at (x = exit_plane + 15 mm,
+         r = R_e + 15 mm), parked out of the way so you can grab it,
+         move it onto a plane perpendicular to the sweep path, and use
+         it directly.
+      3. ROOF PATH   — meridional curve at r = r_inner + chan_t + chan_h
+         (land ceiling = channel ceiling).  Use this for the closeout
+         shell if you're doing the roof as a separate sweep.
+
+    Coordinates: throat-centered mm (x = 0 at throat plane).  Land width
+    and channel height are taken from the MEDIAN of chan_geom arrays —
+    the current IN718 design is constant 1.3 × 0.8 mm everywhere so the
+    median is exact.  If the geometry is tapered in a future design, the
+    swept rectangle will only be right at the representative station
+    (printed in the console output).
+
+    File written:
+      exports/channel_land.dxf — 3 layers: LAND_PATH / LAND_PROFILE / LAND_ROOF
+    """
+    import os
+    os.makedirs(out_dir, exist_ok=True)
+
+    t_w_arr = np.asarray(chan_geom.chan_t)
+    h_arr   = np.asarray(chan_geom.chan_h)
+    ld_arr  = np.asarray(chan_geom.chan_land)
+    t_rep   = float(np.median(t_w_arr))
+    h_rep   = float(np.median(h_arr))
+    ld_rep  = float(np.median(ld_arr))
+
+    # ---- 1) Land-base sweep path (same curve as channel floor) ----
+    base_ents, _ = _contour_primitives(geom, 'LAND_PATH',
+                                       radial_offset=t_rep)
+
+    # ---- 2) Land-ceiling path (= channel ceiling, for the roof sweep) ----
+    roof_ents, _ = _contour_primitives(geom, 'LAND_ROOF',
+                                       radial_offset=t_rep + h_rep)
+
+    # ---- 3) Cross-section rectangle parked off to the side ----
+    # Position it well clear of the main contour so you can grab it, copy
+    # it onto the plane you actually want, and sweep without deleting
+    # anything by accident.  Park at (x_exit + 15 mm, R_e + 15 mm).
+    L_n_mm = geom.L_nozzle * 1000.0
+    R_e_mm = geom.R_e * 1000.0
+    w_mm   = ld_rep * 1000.0   # land width (= rectangle width in the ROTATED view)
+    h_mm   = h_rep  * 1000.0   # channel height (= rectangle height)
+
+    park_x = L_n_mm + 15.0
+    park_y = R_e_mm + 15.0
+
+    # Rectangle corners (CCW)
+    x0, y0 = park_x,          park_y
+    x1, y1 = park_x + w_mm,   park_y
+    x2, y2 = park_x + w_mm,   park_y + h_mm
+    x3, y3 = park_x,          park_y + h_mm
+
+    profile_ents = [
+        _dxf_line('LAND_PROFILE', x0, y0, x1, y1),
+        _dxf_line('LAND_PROFILE', x1, y1, x2, y2),
+        _dxf_line('LAND_PROFILE', x2, y2, x3, y3),
+        _dxf_line('LAND_PROFILE', x3, y3, x0, y0),
+        # Corner snap points
+        _dxf_point('LAND_PROFILE', x0, y0),
+        _dxf_point('LAND_PROFILE', x1, y1),
+        _dxf_point('LAND_PROFILE', x2, y2),
+        _dxf_point('LAND_PROFILE', x3, y3),
+    ]
+
+    # ---- Write combined file ----
+    out_path = os.path.join(out_dir, 'channel_land.dxf')
+    _write_dxf(out_path, base_ents + roof_ents + profile_ents)
+
+    print(f"\n--- Land DXF export (throat-centered, x=0 at throat) ---")
+    print(f"  {out_path}")
+    print(f"  Layers:")
+    print(f"    LAND_PATH     — sweep path at r = r_inner + {t_rep*1000:.2f} mm "
+          f"(land base = channel floor)")
+    print(f"    LAND_ROOF     — roof/closeout path at r = r_inner + "
+          f"{(t_rep + h_rep)*1000:.2f} mm")
+    print(f"    LAND_PROFILE  — {w_mm:.2f} × {h_mm:.2f} mm rectangle parked at "
+          f"({park_x:.1f}, {park_y:.1f}) mm")
+    print(f"  Sweep count: {getattr(chan_geom, 'n_chan', [60])[0] if hasattr(chan_geom, 'n_chan') else 60:.0f}"
+          f"–{int(np.max(getattr(chan_geom, 'n_chan', [120])))} lands "
+          f"(equal to channel count; array circumferentially in CAD)")
+    print(f"  NOTE: land w ({ld_rep*1000:.3f} mm) and chan h ({h_rep*1000:.3f} mm)")
+    print(f"  are the MEDIAN values — exact for the current constant-section")
+    print(f"  IN718 design.  Taper-aware version will be needed if you change")
+    print(f"  this later.")
+
+
 def export_csv(geom: 'EngineGeometry', chan_geom, out_dir: str = 'exports',
                key_stations=None, key_stations_N_throat=None):
     """
