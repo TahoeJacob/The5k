@@ -116,11 +116,14 @@ class EngineConfig:
                                     # Published range: (0.05-0.20)×10⁻² = 0.0005-0.002
     film_T_from_regen: bool = False # If True, film_T_inlet = regen coolant exit temperature
                                     # (iterates thermal solve until converged)
-    # Film cooling gaseous-mixing model selector:
-    #   "v_k"  — Vasiliev-Kudryavtsev (Ponomarenko 2012, used by RPA)
-    #   "aedc" — Kutateladze/Stollery with virtual upstream edge
-    #            (AEDC-TR-91-1 Eq. 3.5, self-contained, no free Kt)
-    film_model:     str   = "v_k"
-    # AEDC-only: free-stream turbulence rms fraction (e_t).  Typical rocket
-    # chamber values 0.05–0.10.  Turbulence correction:  K_t = 1 + 10.2·e_t
-    film_aedc_et:   float = 0.07
+    # Ponomarenko p.9 surface-layer initial mass flow fraction m̄_s⁰.
+    # The paper does not give a formula.  Physical interpretation:
+    # m̄_s⁰ = ṁ_BL(x_inject) / ṁ_total, i.e. the combustion-gas mass flow
+    # already in the wall boundary layer at the injection location, as a
+    # fraction of total chamber mass flow.  At the chamber head this is
+    # formally zero (degenerate); for injection past a developed BL it
+    # is typically 0.1–0.3.
+    #   None = compute from a turbulent flat-plate BL at the chamber-end
+    #          reference length (physically motivated default)
+    #   float = use this value directly (for calibration against RPA)
+    film_m_bar_s0:  Optional[float] = None

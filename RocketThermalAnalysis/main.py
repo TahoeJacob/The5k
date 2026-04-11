@@ -294,11 +294,11 @@ config_5kN_RP1_CuCrZr = replace(
     # comparison isn't confounded by film-inlet enthalpy.
     film_fraction  = 0.10,
     film_T_inlet   = 300.0,
-    # AEDC-TR-91-1 Eq. 3.5 — closed-form, self-contained (no H_s or Kt knob).
-    # Free-stream turbulence e_t=0.07 is a typical rocket chamber value
-    # (published range 0.05–0.10).
-    film_model     = "aedc",
-    film_aedc_et   = 0.07,
+    # Ponomarenko p.9 surface-layer initial mass flow fraction m̄_s⁰.
+    # Calibrated against 5kN_CuCrZr_10%Film_1100KFile.txt: 0.5 gives the
+    # best match to RPA's flux at both chamber (+16 %) and throat (+5 %)
+    # stations.  The BL-based physical default (~0.20) over-corrects.
+    film_m_bar_s0  = 0.5,
 
     # ---- User's RPA-validated channel geometry -------------------------
     # Bifurcation: 45 at throat → 90 in both chamber and nozzle (2× split

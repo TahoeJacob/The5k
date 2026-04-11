@@ -45,8 +45,10 @@ Phase 3 — Gaseous mixing with surface layer              [Ponomarenko p.9]
               Hs = 0.37·s/Re_s^0.2
               with s = distance from injection.
         m̄s⁰ : initial surface-layer relative mass flow.  No formula in the
-              paper.  We interpret "surface layer" as the entire outer
-              flow, i.e.  m̄s⁰ = 1 − m̄f⁰.
+              paper.  Physical interpretation: ṁ_BL(x_inject)/ṁ_total — the
+              gas already in the wall BL when the film is introduced.
+              Default: 2·Hs_dev/R_chamber from a developed turbulent BL at
+              x = L_chamber; override via config.film_m_bar_s0.
 
     Layer properties (the inputs to Ievlev's S) are computed as
     mass-weighted blends of the free-stream combustion gas and the film
@@ -242,7 +244,6 @@ def compute_film_taw(flow:   FlowSolution,
     # Gaseous mixing parameters (Vasiliev-Kudryavtsev model)
     Kt      = config.film_Kt                    # turbulent mixing intensity
     m_bar_f = mdot_film / geom.mdot              # film relative mass flow
-    m_bar_s = 1.0 - m_bar_f                      # surface layer ≈ rest of flow
 
     # Approximate liquid film viscosity for stability coefficient
     mu_film_liq = 3.0e-4   # RP-1 at ~400K [Pa·s] (order-of-magnitude)
@@ -278,17 +279,43 @@ def compute_film_taw(flow:   FlowSolution,
     # near the CuCrZr design range.
     T_w_ref      = 1000.0
 
-    # Initial layer mass ratios
+    # Initial layer mass ratios.
+    #
+    # m̄_f⁰ = ṁ_film / ṁ_total (well-defined).
+    #
+    # m̄_s⁰ is the initial "surface layer" relative mass flow at injection.
+    # Ponomarenko p.9 does not give a formula.  Physical interpretation: the
+    # combustion-gas mass flow already in the wall BL at the injection
+    # location, as a fraction of total chamber mass flow.  For a developed
+    # turbulent BL in the chamber, ṁ_BL/ṁ_total ≈ 2·Hs/R_chamber (annular
+    # approximation), typically 0.1–0.3 for injection past the injector face.
+    #
+    # Setting m̄_s⁰ = 1 − m̄_f⁰ (treating the *entire* outer flow as the
+    # surface layer) makes the layer enormous relative to the film and the
+    # asymptotic film fraction in the wall layer collapses to ~m̄_f⁰, i.e.
+    # protection vanishes.  That over-predicts q_gas by ~50 % vs RPA.
     m_bar_f0     = m_bar_f                  # ṁ_film / ṁ_total
-    m_bar_s0     = 1.0 - m_bar_f0           # rest of the flow (see p.9 note)
+    if config.film_m_bar_s0 is not None:
+        m_bar_s0 = float(config.film_m_bar_s0)
+    else:
+        # Physical default: turbulent flat-plate BL at the chamber-end
+        # reference length, normalised by chamber radius.
+        R_chamber = float(nozzle_radius(0.0, geom, dx))
+        L_ref     = max(float(geom.L_c), 0.02)
+        # Representative chamber Mach: sample ~80 % of the way from injection
+        # to the throat, still subsonic (M ≈ 0.15–0.25 in typical chambers).
+        i_ref  = min(i_start + int(0.8 * L_ref / dx), n - 1)
+        M_ref  = max(float(flow.M[i_ref]), 0.1)
+        Hs_dev = _bl_thickness(L_ref, cea, M_ref)
+        m_bar_s0 = float(np.clip(2.0 * Hs_dev / R_chamber, 0.05, 0.5))
 
     print(f"\n--- Film Cooling ---")
     print(f"  mdot_film = {mdot_film*1000:.2f} g/s  "
           f"({config.film_fraction*100:.1f}% of coolant)")
     print(f"  Injection at x = {x_inject*1000:.1f} mm  "
           f"T_inlet = {T_film_inlet:.1f} K  T_sat = {T_sat:.1f} K")
-    print(f"  Kt = {Kt:.4f}  m̄f = {m_bar_f:.4f}  "
-          f"M = Kt·m̄s/m̄f = {Kt * m_bar_s / m_bar_f:.2f}")
+    print(f"  Kt = {Kt:.4f}  m̄f⁰ = {m_bar_f0:.4f}  m̄s⁰ = {m_bar_s0:.4f}  "
+          f"M₀ = Kt·m̄s⁰/m̄f⁰ = {Kt * m_bar_s0 / m_bar_f0:.2f}")
 
     for i in range(i_start, n):
         x   = float(flow.x[i])
