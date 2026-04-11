@@ -89,6 +89,14 @@ class EngineConfig:
     chan_h_throat:  Optional[float] = None
     chan_h_chamber: Optional[float] = None
     chan_h_exit:    Optional[float] = None
+    # Tapered channel width [m] — same convention as chan_h_*.  When all three
+    # are provided, chan_w is PRESCRIBED directly and the land width falls out
+    # of the circumferential packing:  land(x) = 2π·r(x)/N(x) − chan_w(x).
+    # Leave as None to use the legacy land-profile path (land is prescribed,
+    # width is derived).
+    chan_w_throat:  Optional[float] = None
+    chan_w_chamber: Optional[float] = None
+    chan_w_exit:    Optional[float] = None
 
     wall_2d: bool = False  # True = 2-D wall conduction (Betti method);
                            # False = 1-D flat-plate + fin model
@@ -108,3 +116,11 @@ class EngineConfig:
                                     # Published range: (0.05-0.20)×10⁻² = 0.0005-0.002
     film_T_from_regen: bool = False # If True, film_T_inlet = regen coolant exit temperature
                                     # (iterates thermal solve until converged)
+    # Film cooling gaseous-mixing model selector:
+    #   "v_k"  — Vasiliev-Kudryavtsev (Ponomarenko 2012, used by RPA)
+    #   "aedc" — Kutateladze/Stollery with virtual upstream edge
+    #            (AEDC-TR-91-1 Eq. 3.5, self-contained, no free Kt)
+    film_model:     str   = "v_k"
+    # AEDC-only: free-stream turbulence rms fraction (e_t).  Typical rocket
+    # chamber values 0.05–0.10.  Turbulence correction:  K_t = 1 + 10.2·e_t
+    film_aedc_et:   float = 0.07

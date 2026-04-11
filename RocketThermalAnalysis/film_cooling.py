@@ -15,21 +15,49 @@ Phase 2 — Vaporisation  (x_sat → x_vap)
     Wall sees T_aw_eff = T_sat
 
 Phase 3 — Gaseous film mixing  (x_vap → x_end)
-    Vasiliev-Kudryavtsev (1993) turbulent mixing model [1]:
-        ξ = 1 - exp(-M · s / Hs)
-        M = Kt · m̄s / m̄f
+
+Two models are available via `config.film_model`:
+
+  "aedc" — Kutateladze/Stollery with virtual upstream edge, per
+           AEDC-TR-91-1 Eq. 3.5 (Morren & Nejad 1991).  Closed-form,
+           self-contained, no free Kt.  Derived from turbulent BL mass
+           entrainment + calorimetric heat balance:
+
+               η = [ 1 + K_M·(cpg/cpc)·(0.325·(Kt·X + X0)^0.8 − 1) ]^−1
+
+           where X = K·x, K = G·μg^0.25·Mc^(−1.25), X_0 is the virtual
+           upstream point from mass balance at injection, K_M is the
+           foreign-gas correction (M_c/M_g)^0.14, and Kt = 1 + 10.2·e_t
+           is the free-stream turbulence correction.
+
+  "v_k"  — Vasiliev-Kudryavtsev (Ponomarenko 2012 p.9).  Evolves m̄_s,
+           m̄_f, M along x.  Has a free Kt knob (published range
+           (0.05–0.20)×10⁻²) and depends on a separately-specified
+           surface-layer thickness H_s that Ponomarenko does not give
+           a formula for.  Matches RPA qualitatively but quantitative
+           agreement depends on H_s choice.
+
+        m̄s(ξ) = m̄s⁰·(1−ξ/2) + m̄f⁰·(ξ/2)
+        m̄f(ξ) = m̄s⁰·(ξ/2)   + m̄f⁰·(1−ξ/2)
+        M(ξ)  = Kt · m̄s(ξ) / m̄f(ξ)          ← CURRENT, not initial
+        ξ     = 1 − exp(−M(ξ) · x / Hs)     ← implicit in ξ
+
     where:
         Kt   = turbulent mixing intensity, (0.05–0.20)×10⁻²  [1]
-        m̄s  = surface layer relative mass flow (≈ 1 for small film fractions)
-        m̄f  = film relative mass flow = ṁ_film / ṁ_total
-        Hs   = surface layer thickness ≈ turbulent BL thickness
+        m̄s⁰  = initial surface-layer relative mass flow = 1 − m̄f⁰
+        m̄f⁰  = film relative mass flow = ṁ_film / ṁ_total
+        Hs   = surface-layer thickness ≈ turbulent BL thickness
              = 0.37 · x / Re_x^0.2   (flat-plate turbulent BL estimate)
+        x    = distance from FILM INJECTION point (Ponomarenko p.10)
 
-    Film effectiveness η = 1 - ξ = exp(-M · s / Hs)
-    T_aw_eff = η · T_sat + (1-η) · T_aw_bare
+    Film effectiveness η = 1 − ξ
+    T_aw_eff = η · T_sat + (1−η) · T_aw_bare
 
-    The 1/m̄f scaling in M is the key physics: more film mass → lower M
-    → slower mixing → longer protection.  No curve-fitting required.
+    The evolving M is the key physics: as film dilutes into the surface
+    layer, local M drops, mixing slows down, and the film persists
+    further downstream than a constant-M model predicts.  No curve
+    fitting required — Kt is the only empirical knob and sits in the
+    published range.
 
 References
 ----------
@@ -87,6 +115,62 @@ def _film_stability(mdot_film: float, r_wall: float, mu_film: float) -> float:
 # ---------------------------------------------------------------------------
 # Turbulent BL thickness estimate
 # ---------------------------------------------------------------------------
+def _aedc_film_eta(s:              float,   # distance from injection [m]
+                   M_c_dot:        float,   # coolant mass flow per circ [kg/(m·s)]
+                   G_gas:          float,   # free-stream mass flux [kg/(m²·s)]
+                   mu_gas:         float,   # free-stream viscosity [Pa·s]
+                   cpg:            float,   # free-stream cp [J/(kg·K)]
+                   cpc:            float,   # coolant cp  [J/(kg·K)]
+                   M_cool_mol:     float,   # coolant molar mass [kg/mol]
+                   M_gas_mol:      float,   # gas molar mass     [kg/mol]
+                   et:             float,
+                   x_i:            float = 0.0) -> float:
+    """
+    Gaseous film effectiveness η from AEDC-TR-91-1 Eq. 3.5
+    (Morren & Nejad 1991 p.24, after Kutateladze & Stollery).
+
+        η = [ 1 + K_M·(cpg/cpc)·(0.325·(Kt·X + X0)^0.8 − 1) ]^−1
+
+    with
+        X   = K · s                                 (s from injection)
+        K   = G · μg^0.25 · Ṁc^(−1.25)              [1/m]
+        G   = ρg · ug   free-stream mass flux       [kg/(m²·s)]
+        Ṁc  = ṁ_film / (2π r_wall)                  coolant mass flow
+              per unit circumference                [kg/(m·s)]
+        X_0 = (3.08 + X_i^0.8)^1.25 − X_i           virtual upstream point
+        X_i = K · x_i                               (0 when injection = origin)
+        Kt  = 1 + 10.2·e_t                          (Eq. 3.1.2 turbulence correction)
+        K_M = (M_cool_mol / M_gas_mol)^0.14         (Eq. 3.2 foreign-gas correction)
+
+    All M_c_dot, G, μ appearing in K must be in SI — the resulting X is
+    dimensionless.  For non-uniform free-stream flow (a rocket nozzle),
+    AEDC §3.4 warns that Eq. 3.5 is strictly an integral for constant G;
+    the caller should pass G evaluated at (or just downstream of) the
+    INJECTION point, not the local value — otherwise η is non-monotonic
+    across the throat.
+
+    Returns η ∈ [0, 1].
+    """
+    if s <= 0.0 or M_c_dot <= 0.0 or G_gas <= 0.0:
+        return 1.0
+
+    K_scale = G_gas * (mu_gas**0.25) * (M_c_dot**(-1.25))   # [1/m]
+
+    X    = K_scale * s
+    X_i  = K_scale * max(x_i, 0.0)
+    X_0  = (3.08 + X_i**0.8)**1.25 - X_i
+
+    K_t  = 1.0 + 10.2 * et
+    K_M  = (M_cool_mol / M_gas_mol)**0.14
+
+    bracket = 0.325 * (K_t * X + X_0)**0.8 - 1.0
+    denom   = 1.0 + K_M * (cpg / cpc) * bracket
+    if denom <= 0.0:
+        return 1.0
+    eta = 1.0 / denom
+    return float(np.clip(eta, 0.0, 1.0))
+
+
 def _bl_thickness(x: float, cea: CEAResult, M_local: float) -> float:
     """
     Estimate turbulent boundary layer thickness at axial station x [m].
@@ -195,6 +279,30 @@ def compute_film_taw(flow:   FlowSolution,
     # Approximate liquid Cp
     Cp_film = 2100.0   # RP-1 [J/(kg·K)]
 
+    # AEDC-model constants for the film coolant (vapour side, Phase 3)
+    _coolant_props = {
+        "RP1":      (0.170, 2500.0),  # (molar mass [kg/mol], cp_vapor [J/kgK])
+        "Methane":  (0.01604, 2450.0),
+        "Hydrogen": (0.002016, 14300.0),
+    }
+    M_coolant_kg_mol, cpc_vapor = _coolant_props.get(
+        config.film_coolant, (0.170, 2500.0))
+
+    # Free-stream conditions at the INJECTION station — frozen per AEDC §3.4
+    # (Eq. 3.5 is an integral result for constant G; using local G across the
+    # throat would spuriously jump η).
+    M_inj       = float(flow.M[i_start])
+    fac_inj     = 1.0 + (cea.gamma_c - 1.0) / 2.0 * M_inj**2
+    T_inj       = cea.T_c / fac_inj
+    P_inj       = cea.P_c * fac_inj**(-cea.gamma_c / (cea.gamma_c - 1.0))
+    rho_inj     = P_inj / (cea.R_specific * T_inj)
+    a_inj       = np.sqrt(cea.gamma_c * cea.R_specific * T_inj)
+    u_inj       = M_inj * a_inj
+    G_inj       = rho_inj * u_inj                              # [kg/m²s]
+    mu_inj      = cea.visc_c * (T_inj / cea.T_c)**0.7          # Sutherland-like
+    r_inj       = nozzle_radius(float(flow.x[i_start]), geom, dx)
+    M_c_dot_inj = mdot_film / max(2.0 * np.pi * r_inj, 1e-12)  # [kg/(m·s)]
+
     print(f"\n--- Film Cooling ---")
     print(f"  mdot_film = {mdot_film*1000:.2f} g/s  "
           f"({config.film_fraction*100:.1f}% of coolant)")
@@ -256,23 +364,46 @@ def compute_film_taw(flow:   FlowSolution,
                 print(f"  Film fully vaporised at x = {x*1000:.1f} mm")
 
         elif phase == "gaseous":
-            # --- Phase 3: Gaseous mixing (RPA p.8-9) ---
-            # Vasiliev-Kudryavtsev (1993) turbulent mixing model:
-            #
-            #   ξ = 1 - exp(-M · s / Hs)
-            #   M = Kt · m̄s / m̄f
-            #   Hs = turbulent BL thickness at station x
-            #
-            # Film effectiveness η = 1 - ξ
-            # More film → larger m̄f → smaller M → slower mixing
+            # --- Phase 3: Gaseous mixing ---
+            s = x - x_inject        # distance from INJECTION
 
-            s  = x - x_vap
-            Hs = _bl_thickness(x, cea, M)
-
-            M_mix = Kt * m_bar_s / m_bar_f
-            xi    = 1.0 - np.exp(-M_mix * s / Hs)
-            eta   = 1.0 - xi   # = exp(-M_mix · s / Hs)
-            eta   = float(np.clip(eta, 0.0, 1.0))
+            if config.film_model == "aedc":
+                # AEDC-TR-91-1 Eq. 3.5 — closed form, no free Kt knob.
+                # Free-stream G/μ frozen at the injection station per §3.4.
+                eta = _aedc_film_eta(
+                    s           = s,
+                    M_c_dot     = M_c_dot_inj,
+                    G_gas       = G_inj,
+                    mu_gas      = mu_inj,
+                    cpg         = cea.Cp_c,
+                    cpc         = cpc_vapor,
+                    M_cool_mol  = M_coolant_kg_mol,
+                    M_gas_mol   = cea.molar_mass,
+                    et          = config.film_aedc_et,
+                    x_i         = 0.0,
+                )
+            else:
+                # Vasiliev-Kudryavtsev (Ponomarenko 2012 p.9) — implicit ξ:
+                #   m̄s(ξ) = m̄s⁰·(1−ξ/2) + m̄f⁰·(ξ/2)
+                #   m̄f(ξ) = m̄s⁰·(ξ/2)   + m̄f⁰·(1−ξ/2)
+                #   M(ξ)  = Kt · m̄s(ξ) / m̄f(ξ)
+                #   ξ     = 1 − exp(−M(ξ) · s / Hs)
+                Hs = _bl_thickness(x, cea, M)
+                xi = 0.0
+                for _ in range(20):
+                    m_bar_s_cur = m_bar_s * (1.0 - xi/2.0) + m_bar_f * (xi/2.0)
+                    m_bar_f_cur = m_bar_s * (xi/2.0)        + m_bar_f * (1.0 - xi/2.0)
+                    if m_bar_f_cur < 1e-12:
+                        xi = 1.0
+                        break
+                    M_mix   = Kt * m_bar_s_cur / m_bar_f_cur
+                    xi_new  = 1.0 - np.exp(-M_mix * s / Hs)
+                    if abs(xi_new - xi) < 1e-6:
+                        xi = xi_new
+                        break
+                    xi = 0.5 * (xi + xi_new)
+                eta = 1.0 - xi
+                eta = float(np.clip(eta, 0.0, 1.0))
 
             # Modified adiabatic wall temperature
             T_aw_eff[i] = eta * T_sat + (1.0 - eta) * T_aw_i

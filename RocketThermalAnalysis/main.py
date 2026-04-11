@@ -282,15 +282,43 @@ config_5kN_RP1_CuCrZr = replace(
     # Wall — CuCrZr LPBF aged, conservative printed-k derate
     wall_k         = 240.0,   # W/m·K — matches RPA NoFilm validation file (printer's conservative minimum)
     wall_roughness = 12.0e-6, # LPBF Cu as-printed ~10–15 µm Ra
-    wall_melt_T    = 1320.0,  # CuCrZr solidus; design limit lower (see below)
+    wall_melt_T    = 1320.0,  # CuCrZr solidus; sanity check only — real
+                              # design ceiling is T_hw ≤ 800 K (short-life
+                              # ragged edge) or 700 K (reusable).  See the
+                              # strength-vs-T discussion in the working log.
 
-    # Film cooling: we believe Cu can do it bare.  Start at 0 %, bump only
-    # if T_cw > 700 K (coking) or T_hw > 800 K (strength).
-    film_fraction  = 0.00,
+    # Film cooling — matches the RPA design point the user converged on.
+    # RPA convention: film injected at T_film_inlet = 300 K, ignoring that
+    # the real regen-split coolant is actually hotter (~400–500 K) by the
+    # time it reaches the injection slot.  Match RPA's convention so the
+    # comparison isn't confounded by film-inlet enthalpy.
+    film_fraction  = 0.10,
+    film_T_inlet   = 300.0,
+    # AEDC-TR-91-1 Eq. 3.5 — closed-form, self-contained (no H_s or Kt knob).
+    # Free-stream turbulence e_t=0.07 is a typical rocket chamber value
+    # (published range 0.05–0.10).
+    film_model     = "aedc",
+    film_aedc_et   = 0.07,
 
-    # 2-D wall conduction — roof-row Robin BC fix applied (was half-strength
-    # at closeout_t=0, causing +293 K T_hw over-prediction vs 1-D / RPA).
-    wall_2d        = True,
+    # ---- User's RPA-validated channel geometry -------------------------
+    # Bifurcation: 45 at throat → 90 in both chamber and nozzle (2× split
+    # in each direction).  Channel width and height are prescribed; land
+    # width falls out of circumferential packing (RPA convention).
+    N_channels          = 45,
+    N_channels_throat   = 45,
+    N_channels_chamber  = 90,
+    chan_w_chamber      = 1.5e-3,
+    chan_w_throat       = 1.3e-3,
+    chan_w_exit         = 1.5e-3,
+    chan_h_chamber      = 1.5e-3,
+    chan_h_throat       = 1.3e-3,
+    chan_h_exit         = 1.5e-3,
+
+    # 1-D wall conduction — matches RPA (Ponomarenko fin) convention.
+    # The 2-D solver over-predicts T_hw by ~140 K for high-k walls due to
+    # spreading resistance that Ponomarenko's empirical fin correlation
+    # already absorbs; use 1-D for design, keep 2-D as a diagnostic.
+    wall_2d        = False,
 )
 
 
@@ -477,7 +505,20 @@ def run():
     else:
         chan_h[:] = 2e-3
 
-    # Calculate width at each slice based off land width
+    # Tapered channel WIDTH (prescribed).  If all three chan_w_* keypoints are
+    # provided we prescribe channel width directly and DERIVE the land from
+    # circumferential packing — this matches the RPA "constant channel width"
+    # convention where a/b/N are inputs and the land is whatever falls out.
+    prescribe_w = (config.chan_w_throat is not None
+                   and config.chan_w_chamber is not None
+                   and config.chan_w_exit is not None)
+    if prescribe_w:
+        x_wtaper = np.array([0.0, x_throat, geom.L_c + geom.L_nozzle])
+        w_taper  = np.array([config.chan_w_chamber,
+                             config.chan_w_throat,
+                             config.chan_w_exit])
+
+    # Calculate width/land at each slice
     n_chan_float = np.zeros(len(x_j))
     for i, x in enumerate(x_j):
         r = nozzle_radius(x, geom, config.dx) # Calculate the radius of the slice
@@ -486,7 +527,11 @@ def run():
         n_chan_per_station[i] = int(round(N_local))
         circ = 2*np.pi*r # Calculate the circumference of the slice
         avail_width = circ/N_local # Calculate available width at each slice
-        chan_w[i] = avail_width - chan_land[i] # Calculate width at each slice
+        if prescribe_w:
+            chan_w[i]    = float(np.interp(x, x_wtaper, w_taper))
+            chan_land[i] = avail_width - chan_w[i]
+        else:
+            chan_w[i] = avail_width - chan_land[i] # Calculate width at each slice
 
     # Guard rail: warn if tapered land profile pushed any channel width below
     # the 1.5 mm SLM depowder floor.
