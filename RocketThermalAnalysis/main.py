@@ -72,15 +72,15 @@ config = EngineConfig(
     chan_h_exit    = 0.8e-3,
 
     # Film Cooling
-    film_fraction  = 0.22,   # 5% of fuel flow as film (target: as low as possible)
+    film_fraction  = 0.22,   # 22% of fuel flow as film
     film_inject_x  = 0.0,    # inject at injector face
     film_coolant   = "RP1",
     film_T_inlet   = 400.0,
     film_Kt        = 0.0013, # turbulent mixing intensity (Vasiliev 1993, range 0.0005-0.002)
 
     wall_2d=True,
-    use_integral_bl=False,
-    C_bartz=0.026,          # Thin BL calibration (matches RPA's simplified Bartz)
+    use_integral_bl=False,  # integral BL path made h_gas ~70% low — not RPA's 0.025 knob
+    C_bartz=0.026,
 )
 
 
