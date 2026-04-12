@@ -104,6 +104,9 @@ class EngineConfig:
     film_inject_x:  float = 0.0     # Injection axial location [m] (0 = injector face)
     film_coolant:   str   = "RP1"   # CoolProp name of film fluid
     film_T_inlet:   float = 290.0   # Film injection temperature [K]
+    film_model:     str   = "simon" # Film cooling model for gaseous phase:
+                                    #   "vasiliev" = Vasiliev & Kudryavtsev (1993) exponential mixing
+                                    #   "simon"    = Simon wall-jet (1986) + Spalding (1967) power-law decay
     film_Kt:        float = 0.0013  # Turbulent mixing intensity (Vasiliev & Kudryavtsev 1993)
                                     # Published range: (0.05-0.20)×10⁻² = 0.0005-0.002
     film_T_from_regen: bool = False # If True, film_T_inlet = regen coolant exit temperature

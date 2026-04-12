@@ -28,7 +28,7 @@ config = EngineConfig(
 
     # Performance
     P_c   = 20.0e5,             # 60 bar [Pa]
-    F_vac = 5500.0,             # [N]
+    F_vac = 3000.0,             # [N]
 
     # O/F — uncomment / set both for sweep + analysis
     OF        = 2.0,
@@ -51,9 +51,9 @@ config = EngineConfig(
     RD_mult = 0.382,
 
     # Wall material (6061-T6 Al)
-    wall_k         = 167.0,     # [W/m*K]
+    wall_k         = 16.0,     # [W/m*K]
     wall_roughness = 12.0e-6,   # SLM AlSi10Mg as-printed (Ra ~10-12 µm)
-    wall_melt_T    = 855.0,     # [K]
+    wall_melt_T    = 1100.0,     # [K]
 
     # Coolant inlet (counter-current from nozzle exit)
     T_coolant_inlet = 290.0,    # [K]
@@ -62,8 +62,8 @@ config = EngineConfig(
 
     # Channels — bifurcating: 40 at throat, splits to 80 in chamber/exit
     N_channels             = 40,    # fallback (used if throat/chamber not set)
-    N_channels_throat      = 75,
-    N_channels_chamber     = 150,
+    N_channels_throat      = 30,
+    N_channels_chamber     = 60,
     channel_split_r_ratio  = 2.0,   # split when local r > 2·R_t
     dx                     = 1e-3,
 

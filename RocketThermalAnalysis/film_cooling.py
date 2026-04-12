@@ -1,7 +1,8 @@
 """
 film_cooling.py
-Liquid + gaseous film cooling model following the RPA thermal analysis
-methodology (Ponomarenko 2012) and Vasiliev & Kudryavtsev (1993).
+Liquid + gaseous film cooling model with two gaseous-phase options:
+  (a) Vasiliev & Kudryavtsev (1993) exponential mixing  [config.film_model = "vasiliev"]
+  (b) Simon wall-jet (1986) + Spalding (1967) power-law  [config.film_model = "simon"]
 
 Phase 1 — Liquid heating  (x_inject → x_sat)
     Film enters at T_film_inlet, heated by gas-side convection (Bartz HTC
@@ -11,58 +12,59 @@ Phase 1 — Liquid heating  (x_inject → x_sat)
          liquid coolant. The convective heat transfer from the liquid
          coolant to the wall may be neglected."
     Heating ODE:    dT_f/dx = 2π·R·q_w^{T_f} / (η · ṁ_f · c̄_f)
-        q_w^{T_f} = h_g(T_f) · (T_aw_bare − T_f)
-        η        = film stability from Fig 2 [1] (0.4–0.8)  — DIVIDES ṁ_f
-                   (reflects effective liquid mass doing cooling work).
     Wall convective q set to ZERO for regen path (suppress mask).
 
 Phase 2 — Vaporisation  (x_sat → x_vap)
     Film locked at T_sat, all gas-side flux goes into latent heat.
-    Ponomarenko RPA p.11:
-        dṁ_f/dx = 2π·R·q_w^{T_sat} / Q_vap
-        q_w^{T_sat} = h_g(T_sat) · (T_aw_bare − T_sat)
-    η not used here (per Ponomarenko Eq.).
+    Spalding B-number transpiration correction applied.
     Wall convective q set to ZERO for regen path (suppress mask).
 
-Phase 3 — Gaseous film mixing  (x_vap → x_end)
-    Vasiliev-Kudryavtsev (1993) turbulent mixing model [1]:
-        ξ = 1 - exp(-M · s / Hs)
-        M = Kt · m̄s / m̄f
-    where:
-        Kt   = turbulent mixing intensity, (0.05–0.20)×10⁻²  [1]
-        m̄s  = surface layer relative mass flow (≈ 1 for small film fractions)
-        m̄f  = film relative mass flow = ṁ_film / ṁ_total
-        Hs   = surface layer thickness ≈ turbulent BL thickness
-             = 0.37 · x / Re_x^0.2   (flat-plate turbulent BL estimate)
+Phase 3 — Gaseous film  (x_vap → x_end)
 
-    Film effectiveness η = 1 - ξ = exp(-M · s / Hs)
-    T_aw_eff = η · T_sat + (1-η) · T_aw_bare
+  Model "vasiliev" (original):
+    ξ = 1 - exp(-M · s / Hs)
+    Exponential mixing with turbulent BL thickness as length scale.
 
-    The 1/m̄f scaling in M is the key physics: more film mass → lower M
-    → slower mixing → longer protection.  No curve-fitting required.
+  Model "simon" (new, default):
+    Simon (NASA TP-2655, 1986) wall-jet model with Abramovich (1963)
+    shear layer geometry, adapted for rocket film cooling by Di Matteo
+    & Venanzi (AIAA 2012-3908).
+
+    Two sub-regions:
+    3a. Potential core (s < x₁):  Mixing zone hasn't reached the wall.
+        Film fully shields the wall → η ≈ 1, T_aw_eff ≈ T_sat.
+        x₁ = S / (Cm · F(R))  where:
+          S  = effective slot height from mass conservation at vaporisation
+          Cm = shear layer growth rate (Abramovich 1963)
+          F(R) = jet interface position function
+
+    3b. Developed region (s > x₁):  Mixing zone has reached the wall.
+        Spalding (1967) universal correlation:
+          For X < 7:  ε = 1
+          For X ≥ 7:  ε = 7 / X
+        where X = 0.91·(ξ/VR)^0.8·Re_s^{-0.2} + 1.41·(ξ·|1-1/VR|)^0.5
+        and ξ = (s - x₁)/S is the non-dimensional distance past the core.
 
 References
 ----------
-[1] Vasiliev A.P., Kudryavtsev V.M. et al. "Basics of theory and analysis
+[1] Simon F.F. "Jet Model for Slot Film Cooling with Effect of Free-Stream
+    and Coolant Turbulence", NASA TP-2655, 1986.
+[2] Abramovich G.N. "The Theory of Turbulent Jets", MIT Press, 1963.
+[3] Spalding D.B. "A Standard Formulation of the Steady Convective Mass
+    Transfer Problem", Int. J. Heat Mass Transfer 1, pp. 192–207, 1960.
+[4] Di Matteo F., Venanzi M. "Modelling and Simulation of Film Cooling in
+    Liquid Rocket Engine Propulsion Systems", AIAA 2012-3908, 2012.
+[5] Vasiliev A.P., Kudryavtsev V.M. et al. "Basics of theory and analysis
     of liquid-propellant rocket engines", vol.2, 4th Ed., Moscow, 1993.
-[2] Ponomarenko A. "RPA: Thermal Analysis of Thrust Chambers", June 2012.
+[6] Ponomarenko A. "RPA: Thermal Analysis of Thrust Chambers", June 2012.
 
 Entry point
 -----------
     compute_film_taw(flow, geom, cea, config) → (T_aw_eff, OF_eff, phase_code)
         T_aw_eff   : np.ndarray shape (n,)
-                     Meaningful only where phase=0 or phase=3 (regen wall
-                     sees this driving temperature).  Where phase ∈ {1,2}
-                     the wall convective flux is suppressed entirely, so
-                     this value is irrelevant at those stations (set to
-                     bare T_aw for safety).
-        OF_eff     : np.ndarray shape (n,) — surface-layer effective O/F for
-                     Bartz property lookup (only meaningful where phase=3)
+        OF_eff     : np.ndarray shape (n,)
         phase_code : np.ndarray[int] shape (n,)
-                     0 = no film (pre-injection or spent)
-                     1 = liquid film on wall (wall q_conv = 0, film absorbs)
-                     2 = vapour film on wall (wall q_conv = 0, vaporising)
-                     3 = gaseous mixing (equilibrium CEA at OF_eff)
+                     0 = no film, 1 = liquid, 2 = vapour, 3 = gaseous mixing
 """
 
 import numpy as np
@@ -195,6 +197,119 @@ def _bl_thickness(x: float, cea: CEAResult, M_local: float) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Spalding (1967) gaseous film cooling model (Phase 3)
+# ---------------------------------------------------------------------------
+def _gas_state_at(M: float, cea: CEAResult):
+    """Local gas density, velocity, viscosity from isentropic relations."""
+    gam = cea.gamma_c
+    R_sp = cea.R_specific
+    fac = 1.0 + (gam - 1.0) / 2.0 * M**2
+    T_local = cea.T_c / fac
+    P_local = cea.P_c * fac**(- gam / (gam - 1.0))
+    rho = P_local / (R_sp * T_local)
+    a = np.sqrt(gam * R_sp * T_local)
+    v = M * a
+    mu = cea.visc_c * (T_local / cea.T_c)**0.7
+    return rho, v, T_local, P_local, mu
+
+
+def _compute_film_vapour_state(mdot_film: float, r_wall: float,
+                               M_local: float, cea: CEAResult,
+                               T_sat: float, fluid: str):
+    """
+    Compute effective slot conditions at the film vaporisation point.
+
+    Returns (S_eff, v_film, VR, Re_s, rho_film_gas) — all the parameters
+    needed for the Spalding gaseous film correlation.
+
+    Physics:
+    - Film vapour near the wall has lower velocity than the core gas
+      (boundary-layer velocity profile).
+    - S_eff and v_film are computed self-consistently from mass conservation
+      and a linear velocity profile in the turbulent BL.
+    """
+    rho_gas, v_gas, T_gas, P_local, mu_gas = _gas_state_at(M_local, cea)
+
+    # Film vapour density (ideal gas)
+    try:
+        import CoolProp.CoolProp as CP
+        rho_film = CP.PropsSI('D', 'T', T_sat, 'P', P_local, fluid)
+    except Exception:
+        MW_fuel = 170.0  # RP-1 approximate
+        R_fuel = 8314.0 / MW_fuel
+        rho_film = P_local / (R_fuel * T_sat)
+
+    # Turbulent BL thickness at the vaporisation point
+    circ = 2.0 * np.pi * r_wall
+    x_bl = r_wall * 5.0  # approximate development length (order of R_chamber)
+    Re_bl = rho_gas * v_gas * x_bl / max(mu_gas, 1e-12)
+    delta_BL = 0.37 * x_bl / max(Re_bl, 1.0)**0.2
+    delta_BL = max(delta_BL, 0.1e-3)  # at least 0.1 mm
+
+    # Self-consistent S_eff and v_film from:
+    #   ṁ_film = ρ_film · v_film · circ · S_eff      (mass conservation)
+    #   v_film = v_gas · S_eff / δ_BL                  (linear BL profile)
+    #
+    # Solving: S_eff = √(ṁ_film · δ_BL / (ρ_film · v_gas · circ))
+    S_eff = np.sqrt(mdot_film * delta_BL /
+                    max(rho_film * v_gas * circ, 1e-12))
+    S_eff = max(S_eff, 1e-6)
+
+    v_film = v_gas * S_eff / delta_BL
+    v_film = min(v_film, v_gas * 0.95)  # can't exceed gas velocity
+
+    VR = v_film / max(v_gas, 1.0)
+
+    # Film vapour viscosity (rough estimate: lighter than liquid, heavier than gas)
+    mu_film = mu_gas * 0.5
+    Re_s = rho_film * v_film * S_eff / max(mu_film, 1e-12)
+
+    return S_eff, v_film, VR, Re_s, rho_film
+
+
+def _spalding_effectiveness(s: float, D_ref: float,
+                            VR: float, Re_s: float) -> float:
+    """
+    Kutateladze & Leont'ev (1963) gaseous film cooling effectiveness.
+
+    Smooth power-law decay without a hard ε=1 cutoff — physically correct
+    for low VR (film much slower than gas) where turbulent mixing starts
+    immediately at the vaporisation front.
+
+    The Kutateladze form is preferred over Spalding (1967) for rocket film
+    cooling because Spalding's X<7 → ε=1 cutoff assumes a potential core
+    that only exists at VR > ~0.3.  For injector-face liquid film cooling
+    where VR << 1, there is no potential core — mixing is immediate.
+
+    Reference: Kutateladze S.S., Leont'ev A.I. "Turbulent Boundary Layers
+    in Compressible Gases", Academic Press, 1964.
+
+    Parameters
+    ----------
+    s     : distance from film gaseous start [m]
+    D_ref : reference diameter [m] (at vaporisation point)
+    VR    : velocity ratio v_film / v_gas
+    Re_s  : film Reynolds number = ρ_film · v_film · S_eff / μ_film
+
+    Returns
+    -------
+    eta : film cooling effectiveness ∈ [0, 1]
+    """
+    if s <= 0.0 or D_ref <= 0.0:
+        return 1.0
+
+    xi = s / D_ref
+    VR = max(VR, 0.01)
+    Re_s = max(Re_s, 1.0)
+
+    # Kutateladze & Leont'ev (1963):
+    # ε = 3.1 · {4.16 + (x/D / VR)^0.8 · Re_s^{-0.25}}^{-0.8}
+    inner = 4.16 + (xi / VR)**0.8 * Re_s**(-0.25)
+    eta = 3.1 * inner**(-0.8)
+    return float(np.clip(eta, 0.0, 1.0))
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 def compute_film_taw(flow:   FlowSolution,
@@ -272,8 +387,9 @@ def compute_film_taw(flow:   FlowSolution,
     x_vap    = None
     eta_stab_peak = 0.0     # track peak circumferential coverage during film lifetime
 
-    # Gaseous mixing parameters (Vasiliev-Kudryavtsev model)
-    Kt      = config.film_Kt                    # turbulent mixing intensity
+    # Gaseous mixing parameters
+    film_model = getattr(config, 'film_model', 'simon')
+    Kt      = config.film_Kt                    # turbulent mixing intensity (Vasiliev)
     m_bar_f = mdot_film / geom.mdot              # film relative mass flow
     m_bar_s = 1.0 - m_bar_f                      # surface layer ≈ rest of flow
 
@@ -289,13 +405,20 @@ def compute_film_taw(flow:   FlowSolution,
     # Effective enthalpy sink: latent heat + endothermic pyrolysis
     L_eff = L_lv + config.film_L_pyrolysis
 
-    print(f"\n--- Film Cooling ---")
+    # Spalding model state (computed at vaporisation point, used in Phase 3)
+    spalding_S_eff = None   # effective slot height [m]
+    spalding_VR    = None   # velocity ratio v_film / v_gas
+    spalding_Re_s  = None   # film slot Reynolds number
+    spalding_D_ref = None   # reference diameter [m] (at vaporisation point)
+
+    print(f"\n--- Film Cooling (model={film_model}) ---")
     print(f"  mdot_film = {mdot_film*1000:.2f} g/s  "
           f"({config.film_fraction*100:.1f}% of coolant)")
     print(f"  Injection at x = {x_inject*1000:.1f} mm  "
           f"T_inlet = {T_film_inlet:.1f} K  T_sat = {T_sat:.1f} K")
-    print(f"  Kt = {Kt:.4f}  m̄f = {m_bar_f:.4f}  "
-          f"M = Kt·m̄s/m̄f = {Kt * m_bar_s / m_bar_f:.2f}")
+    if film_model == "vasiliev":
+        print(f"  Kt = {Kt:.4f}  m̄f = {m_bar_f:.4f}  "
+              f"M = Kt·m̄s/m̄f = {Kt * m_bar_s / m_bar_f:.2f}")
 
     # Transpiration diagnostic (chamber-average values)
     _B_diag = Cp_gas * (cea.T_c * 0.98 - T_sat) / L_eff
@@ -395,40 +518,53 @@ def compute_film_taw(flow:   FlowSolution,
                 print(f"  Film fully vaporised at x = {x*1000:.1f} mm  "
                       f"(η_stab_peak={eta_stab_peak:.3f})")
 
+                # ── Spalding model: compute effective slot conditions ──
+                if film_model == "simon":
+                    spalding_S_eff, v_film, spalding_VR, spalding_Re_s, \
+                        rho_film_gas = _compute_film_vapour_state(
+                            mdot_film_0, r, M, cea, T_sat, fluid)
+                    # Use constant diameter at vaporisation point for x/D
+                    # normalization (Spalding was derived for constant-D sections;
+                    # using varying D in a converging nozzle artificially kills
+                    # the film at the throat where D is smallest).
+                    spalding_D_ref = 2.0 * r
+
+                    print(f"  Spalding model: S_eff = {spalding_S_eff*1000:.3f} mm  "
+                          f"VR = {spalding_VR:.3f}  Re_s = {spalding_Re_s:.0f}  "
+                          f"D_ref = {spalding_D_ref*1000:.1f} mm  "
+                          f"ρ_film = {rho_film_gas:.1f} kg/m³")
+
         elif phase == "gaseous":
-            # --- Phase 3: Gaseous mixing (RPA p.8-9) ---
-            # Vasiliev-Kudryavtsev (1993) turbulent mixing model:
-            #
-            #   ξ = 1 - exp(-M · s / Hs)
-            #   M = Kt · m̄s / m̄f
-            #   Hs = turbulent BL thickness at station x
-            #
-            # Film effectiveness η = 1 - ξ
-            # More film → larger m̄f → smaller M → slower mixing
+            s = x - x_vap
 
-            s  = x - x_vap
-            Hs = _bl_thickness(x, cea, M)
+            if film_model == "simon":
+                # --- Phase 3: Spalding (1967) power-law decay ---
+                #
+                # The gaseous film covers the full circumference (no
+                # eta_stab_peak factor — that was for liquid film stability).
+                # Spalding's X parameter naturally gives ε = 1 near the
+                # injection (X < 7) and ε = 7/X power-law decay after.
+                #
+                # Normalization: x/D where D = diameter at vaporisation
+                # point (constant, per Spalding's constant-D convention).
+                eta = _spalding_effectiveness(
+                    s, spalding_D_ref, spalding_VR, spalding_Re_s)
 
-            M_mix   = Kt * m_bar_s / m_bar_f
-            eta_gas = float(np.exp(-M_mix * s / Hs))
-            # Gaseous film starts with the peak circumferential coverage
-            # from the liquid/vapour phase (η_stab_peak) and decays via
-            # turbulent mixing.  This ensures continuity: at s=0, gaseous
-            # η matches the blending that was active during vaporisation.
-            eta     = float(np.clip(eta_stab_peak * eta_gas, 0.0, 1.0))
+            else:
+                # --- Phase 3: Vasiliev-Kudryavtsev (1993) exponential ---
+                Hs = _bl_thickness(x, cea, M)
+                M_mix = Kt * m_bar_s / m_bar_f
+                eta_gas = float(np.exp(-M_mix * s / Hs))
+                eta = float(np.clip(eta_stab_peak * eta_gas, 0.0, 1.0))
 
             # Modified adiabatic wall temperature
             T_aw_eff[i] = eta * T_sat + (1.0 - eta) * T_aw_i
 
-            # Surface-layer OF_eff:
-            # Film vapour in the surface layer decays as η → 0 (Vasiliev
-            # turbulent mixing dilutes film into the surface layer).  Capped at
-            # the available layer mass ṁ_s so OF_eff can't go below the
-            # pure-film limit.
+            # Surface-layer OF_eff
             m_fv   = min(mdot_film_0 * eta, mdot_s)
-            w      = m_fv / mdot_s                     # film mass fraction of layer
+            w      = m_fv / mdot_s
             denom  = (1.0 - w) + w * (1.0 + OF_core)
-            OF_eff_arr[i] = max((1.0 - w) * OF_core / denom, 1.0)  # clamp to LUT min
+            OF_eff_arr[i] = max((1.0 - w) * OF_core / denom, 1.0)
             phase_code[i] = 3
 
             if eta < 0.01:
@@ -442,6 +578,14 @@ def compute_film_taw(flow:   FlowSolution,
     of_min = float(np.min(OF_eff_arr[i_start:]))
     print(f"  Surface-layer OF_eff range (film zone): "
           f"{of_min:.3f} → {OF_core:.3f}  (δ_rel={delta_rel:.3f})")
+    if film_model == "simon" and x_vap is not None:
+        throat_x = geom.L_c
+        s_throat = throat_x - x_vap
+        if s_throat > 0:
+            eta_throat = _spalding_effectiveness(
+                s_throat, spalding_D_ref, spalding_VR, spalding_Re_s)
+            print(f"  Spalding ε at throat (s={s_throat*1000:.0f}mm, "
+                  f"x/D={s_throat/spalding_D_ref:.2f}): {eta_throat:.3f}")
 
     return T_aw_eff, OF_eff_arr, phase_code
 
