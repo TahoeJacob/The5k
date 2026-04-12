@@ -1209,9 +1209,9 @@ def solve_thermal(flow: FlowSolution,
             # Falls back to global cea when no override supplied.
             cea_k = cea_per_station[k] if cea_override_active else cea
 
-            # Wall-convective suppress: stations inside an intact liquid or
-            # vaporising film (Ponomarenko phases 1 & 2) see zero wall q_conv.
-            suppress_k = bool(phase_active and phase_code[k] in (1, 2))
+            # Film cooling phases 1 & 2 now blend T_aw_eff (partial coverage)
+            # instead of suppressing wall q entirely.  No suppress needed.
+            suppress_k = False
 
             # Pre-computed h_gas from integral BL (None = use simplified Bartz)
             h_gas_k = float(h_gas_bl[k]) if h_gas_bl is not None else None

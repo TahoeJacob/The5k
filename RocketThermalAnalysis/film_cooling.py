@@ -86,6 +86,53 @@ def _T_aw_bare(M: float, cea: CEAResult) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Spalding B-number transpiration correction for vaporising films
+# ---------------------------------------------------------------------------
+def _transpiration_blowing(T_aw: float, T_sat: float,
+                           Cp_gas: float, L_eff: float) -> float:
+    """
+    Transpiration correction h/h₀ for a vaporising liquid film.
+
+    Uses the Spalding B-number formulation (standard in combustion science):
+
+        h / h₀ = ln(1 + B) / B
+
+        B = Cp_gas · (T_aw − T_sat) / L_eff
+
+    where L_eff = L_vap + L_pyrolysis is the *effective* enthalpy sink at the
+    film surface.  For kerosene-class fuels, endothermic cracking/pyrolysis
+    absorbs 300–600 kJ/kg on top of the ~250 kJ/kg latent heat (Edwards 2003,
+    Ward et al. 2004), giving L_eff ~ 550–850 kJ/kg.
+
+    This replaces Grisson's K_M molecular weight correction which drives
+    h/h₀ → 0.07 for RP-1 (M_vap=170, M_gas=21) — far too aggressive because
+    RP-1 doesn't evaporate as a single heavy species; it cracks into light
+    fragments (C2-C4) at the surface.  The Spalding B formulation sidesteps
+    the MW issue entirely and captures the physics through L_eff.
+
+    Parameters
+    ----------
+    T_aw   : bare adiabatic wall temperature [K]
+    T_sat  : saturation temperature of the coolant [K]
+    Cp_gas : gas-side Cp [J/(kg·K)]
+    L_eff  : effective enthalpy sink = L_vap + L_pyrolysis [J/kg]
+
+    Returns
+    -------
+    h_ratio : h/h₀ ∈ (0, 1].  Multiply h_gas_bare by this.
+    """
+    dT = T_aw - T_sat
+    if dT <= 0.0 or L_eff <= 0.0:
+        return 1.0
+
+    B = Cp_gas * dT / L_eff
+
+    if B < 1e-6:
+        return 1.0
+    return np.log(1.0 + B) / B
+
+
+# ---------------------------------------------------------------------------
 # Film stability coefficient η(Re_f) — RPA Figure 2 / Vasiliev [1]
 # ---------------------------------------------------------------------------
 def _film_stability(mdot_film: float, r_wall: float, mu_film: float) -> float:
@@ -223,6 +270,7 @@ def compute_film_taw(flow:   FlowSolution,
     m_film   = float(mdot_film)
     phase    = "liquid"
     x_vap    = None
+    eta_stab_peak = 0.0     # track peak circumferential coverage during film lifetime
 
     # Gaseous mixing parameters (Vasiliev-Kudryavtsev model)
     Kt      = config.film_Kt                    # turbulent mixing intensity
@@ -235,6 +283,12 @@ def compute_film_taw(flow:   FlowSolution,
     # Approximate liquid Cp
     Cp_film = 2100.0   # RP-1 [J/(kg·K)]
 
+    # Gas-side Cp for Spalding B transpiration parameter
+    Cp_gas = cea.Cp_froz_c   # [J/(kg·K)]
+
+    # Effective enthalpy sink: latent heat + endothermic pyrolysis
+    L_eff = L_lv + config.film_L_pyrolysis
+
     print(f"\n--- Film Cooling ---")
     print(f"  mdot_film = {mdot_film*1000:.2f} g/s  "
           f"({config.film_fraction*100:.1f}% of coolant)")
@@ -242,6 +296,13 @@ def compute_film_taw(flow:   FlowSolution,
           f"T_inlet = {T_film_inlet:.1f} K  T_sat = {T_sat:.1f} K")
     print(f"  Kt = {Kt:.4f}  m̄f = {m_bar_f:.4f}  "
           f"M = Kt·m̄s/m̄f = {Kt * m_bar_s / m_bar_f:.2f}")
+
+    # Transpiration diagnostic (chamber-average values)
+    _B_diag = Cp_gas * (cea.T_c * 0.98 - T_sat) / L_eff
+    _hh0_diag = np.log(1.0 + _B_diag) / _B_diag if _B_diag > 1e-6 else 1.0
+    print(f"  Spalding transpiration: L_eff={L_eff/1e3:.0f} kJ/kg  "
+          f"(L_vap={L_lv/1e3:.0f} + L_pyro={config.film_L_pyrolysis/1e3:.0f})  "
+          f"B={_B_diag:.1f}  h/h₀={_hh0_diag:.4f}")
 
     for i in range(i_start, n):
         x   = float(flow.x[i])
@@ -253,29 +314,34 @@ def compute_film_taw(flow:   FlowSolution,
             break
 
         if phase == "liquid":
-            # --- Phase 1: Liquid heating (Ponomarenko RPA p.10) ---
-            # Convective heat is absorbed by the liquid film; wall q_conv ≈ 0.
-            # ODE:  dT_f/dx = 2πR · q_w^{T_f} / (η · ṁ_f · c̄_f)
-            # where q_w^{T_f} = h_g(T_f) · (T_aw_bare − T_f).
-            # η (film stability, RPA Fig.2) DIVIDES ṁ_f: low-Re, unstable
-            # films act as if less coolant mass is participating, so T_f
-            # rises faster.
+            # --- Phase 1: Liquid heating ---
+            # Film enters subcooled, heated by gas-side convection.
+            # η (film stability, RPA Fig.2) = fraction of circumference with
+            # stable liquid film.  That fraction shields the wall; the rest
+            # (1-η) sees bare T_aw.
+            #
+            # Film heating ODE (on the η-covered fraction):
+            #   dT_f/dx = 2πR · η · h_g · (T_aw − T_f) / (η · ṁ_f · c̄_f)
+            #           = 2πR · h_g · (T_aw − T_f) / (ṁ_f · c̄_f)
+            #
+            # Wall driving temperature (circumferential average):
+            #   T_aw_eff = η·T_film + (1-η)·T_aw_bare
             eta_stab = _film_stability(m_film, r, mu_film_liq)
+            eta_stab_peak = max(eta_stab_peak, eta_stab)
 
             A   = float(flow.A[i])
             h_g = _bartz_h(M, A, T_film, cea, geom)
             q_f = h_g * (T_aw_i - T_film)
             q_f = max(q_f, 0.0)
 
-            # Wall q_conv suppressed externally (phase_code=1).  T_aw_eff
-            # is set to T_film just for bookkeeping/plotting — solver
-            # never multiplies by h_g at this station.
-            T_aw_eff[i]   = T_film
+            # Wall sees blended T_aw: film-covered fraction at T_film,
+            # exposed fraction at bare T_aw.
+            T_aw_eff[i]   = eta_stab * T_film + (1.0 - eta_stab) * T_aw_i
             OF_eff_arr[i] = OF_core
             phase_code[i] = 1
 
             circ       = 2.0 * np.pi * r
-            dT_film_dx = circ * q_f / (eta_stab * m_film * Cp_film)
+            dT_film_dx = circ * q_f / (m_film * Cp_film)
             T_film    += dT_film_dx * dx
 
             if T_film >= T_sat:
@@ -285,23 +351,40 @@ def compute_film_taw(flow:   FlowSolution,
                 print(f"  Film reaches T_sat at x = {x*1000:.1f} mm")
 
         elif phase == "vapour":
-            # --- Phase 2: Vaporisation (Ponomarenko RPA p.11) ---
-            # Film pinned at T_sat, gas-side flux consumed as latent heat.
-            # ODE:  dṁ_f/dx = 2πR · q_w^{T_sat} / Q_vap
-            # where q_w^{T_sat} = h_g(T_sat) · (T_aw_bare − T_sat).
-            # Ponomarenko's Eq. does NOT include η here.
+            # --- Phase 2: Vaporisation ---
+            # Film pinned at T_sat.  Gas-side heat on the η-covered fraction
+            # goes into latent heat (vaporisation); the (1-η) fraction hits
+            # the wall at bare T_aw.
+            #
+            # Spalding transpiration correction: h_eff = h_g · ln(1+B)/B.
+            # Vapour leaving the film surface thickens the viscous sublayer.
+            # B = Cp_gas·ΔT / L_eff, where L_eff = L_vap + L_pyrolysis.
+            #
+            # Vaporisation ODE (η-covered fraction):
+            #   dṁ_f/dx = -2πR · η · h_eff · (T_aw − T_sat) / L_lv
+            #
+            # Wall driving temperature (circumferential average):
+            #   T_aw_eff = η·T_sat + (1-η)·T_aw_bare
+            eta_stab = _film_stability(m_film, r, mu_film_liq)
+            eta_stab_peak = max(eta_stab_peak, eta_stab)
+
             A   = float(flow.A[i])
             h_g = _bartz_h(M, A, T_sat, cea, geom)
-            q_f = h_g * (T_aw_i - T_sat)
+
+            # Spalding transpiration correction
+            h_ratio = _transpiration_blowing(T_aw_i, T_sat, Cp_gas, L_eff)
+            h_eff   = h_g * h_ratio
+
+            q_f = h_eff * (T_aw_i - T_sat)
             q_f = max(q_f, 0.0)
 
-            # Wall q_conv suppressed externally (phase_code=2).
-            T_aw_eff[i]   = T_sat
+            # Wall sees blended T_aw: film-covered at T_sat, exposed at bare T_aw.
+            T_aw_eff[i]   = eta_stab * T_sat + (1.0 - eta_stab) * T_aw_i
             OF_eff_arr[i] = OF_core
             phase_code[i] = 2
 
             circ       = 2.0 * np.pi * r
-            dm_film_dx = -circ * q_f / L_lv
+            dm_film_dx = -circ * eta_stab * q_f / L_lv
             m_film    += dm_film_dx * dx
             m_film     = max(m_film, 0.0)
 
@@ -309,7 +392,8 @@ def compute_film_taw(flow:   FlowSolution,
                 x_vap     = x
                 x_vap_end = x
                 phase     = "gaseous"
-                print(f"  Film fully vaporised at x = {x*1000:.1f} mm")
+                print(f"  Film fully vaporised at x = {x*1000:.1f} mm  "
+                      f"(η_stab_peak={eta_stab_peak:.3f})")
 
         elif phase == "gaseous":
             # --- Phase 3: Gaseous mixing (RPA p.8-9) ---
@@ -325,10 +409,13 @@ def compute_film_taw(flow:   FlowSolution,
             s  = x - x_vap
             Hs = _bl_thickness(x, cea, M)
 
-            M_mix = Kt * m_bar_s / m_bar_f
-            xi    = 1.0 - np.exp(-M_mix * s / Hs)
-            eta   = 1.0 - xi   # = exp(-M_mix · s / Hs)
-            eta   = float(np.clip(eta, 0.0, 1.0))
+            M_mix   = Kt * m_bar_s / m_bar_f
+            eta_gas = float(np.exp(-M_mix * s / Hs))
+            # Gaseous film starts with the peak circumferential coverage
+            # from the liquid/vapour phase (η_stab_peak) and decays via
+            # turbulent mixing.  This ensures continuity: at s=0, gaseous
+            # η matches the blending that was active during vaporisation.
+            eta     = float(np.clip(eta_stab_peak * eta_gas, 0.0, 1.0))
 
             # Modified adiabatic wall temperature
             T_aw_eff[i] = eta * T_sat + (1.0 - eta) * T_aw_i
@@ -370,6 +457,7 @@ def _get_T_sat(fluid: str, P: float) -> float:
     except Exception:
         _fallback = {"RP1": 490.0, "Methane": 180.0, "Hydrogen": 25.0}
         return _fallback.get(fluid, 400.0)
+
 
 
 def _get_L_lv(fluid: str, T_sat: float, P: float) -> float:

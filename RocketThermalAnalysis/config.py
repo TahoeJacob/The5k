@@ -108,6 +108,10 @@ class EngineConfig:
                                     # Published range: (0.05-0.20)×10⁻² = 0.0005-0.002
     film_T_from_regen: bool = False # If True, film_T_inlet = regen coolant exit temperature
                                     # (iterates thermal solve until converged)
+    film_L_pyrolysis: float = 350e3  # Endothermic pyrolysis enthalpy [J/kg] added to L_vap
+                                     # for Spalding B-number transpiration correction.
+                                     # RP-1 cracking: 300-600 kJ/kg (Edwards 2003, Ward 2004)
+                                     # Set to 0 to use latent heat only (no pyrolysis credit).
     film_BL_thickness: float = 0.025 # RPA "Relative thickness of near-wall layer" —
                                      # fraction of total mass flow in the surface layer
                                      # used to compute OF_eff for h_gas property evaluation.
