@@ -4,15 +4,25 @@ Liquid + gaseous film cooling model following the RPA thermal analysis
 methodology (Ponomarenko 2012) and Vasiliev & Kudryavtsev (1993).
 
 Phase 1 — Liquid heating  (x_inject → x_sat)
-    Film enters at T_film_inlet, heated by gas-side convection (Bartz HTC).
-    Includes film stability coefficient η(Re_f) per RPA Figure 2 / [1].
-    Heating:  dTf = 2π·R·q / (η_stab · ṁf · c̄f) · dx
-    Wall sees T_aw_eff = T_film
+    Film enters at T_film_inlet, heated by gas-side convection (Bartz HTC
+    evaluated at T_f).  Per Ponomarenko RPA_ThermalAnalysis.pdf p.10:
+        "the only component of the total heat flux reaching the wall is the
+         radiation heat flux, whereas the convective component heats the
+         liquid coolant. The convective heat transfer from the liquid
+         coolant to the wall may be neglected."
+    Heating ODE:    dT_f/dx = 2π·R·q_w^{T_f} / (η · ṁ_f · c̄_f)
+        q_w^{T_f} = h_g(T_f) · (T_aw_bare − T_f)
+        η        = film stability from Fig 2 [1] (0.4–0.8)  — DIVIDES ṁ_f
+                   (reflects effective liquid mass doing cooling work).
+    Wall convective q set to ZERO for regen path (suppress mask).
 
 Phase 2 — Vaporisation  (x_sat → x_vap)
-    Film locked at T_sat, gas heat evaporates liquid.
-    Rate:  dṁf = 2π·R·q / Q_vap · dx
-    Wall sees T_aw_eff = T_sat
+    Film locked at T_sat, all gas-side flux goes into latent heat.
+    Ponomarenko RPA p.11:
+        dṁ_f/dx = 2π·R·q_w^{T_sat} / Q_vap
+        q_w^{T_sat} = h_g(T_sat) · (T_aw_bare − T_sat)
+    η not used here (per Ponomarenko Eq.).
+    Wall convective q set to ZERO for regen path (suppress mask).
 
 Phase 3 — Gaseous film mixing  (x_vap → x_end)
     Vasiliev-Kudryavtsev (1993) turbulent mixing model [1]:
@@ -39,7 +49,20 @@ References
 
 Entry point
 -----------
-    compute_film_taw(flow, geom, cea, config) → np.ndarray  shape (n,)
+    compute_film_taw(flow, geom, cea, config) → (T_aw_eff, OF_eff, phase_code)
+        T_aw_eff   : np.ndarray shape (n,)
+                     Meaningful only where phase=0 or phase=3 (regen wall
+                     sees this driving temperature).  Where phase ∈ {1,2}
+                     the wall convective flux is suppressed entirely, so
+                     this value is irrelevant at those stations (set to
+                     bare T_aw for safety).
+        OF_eff     : np.ndarray shape (n,) — surface-layer effective O/F for
+                     Bartz property lookup (only meaningful where phase=3)
+        phase_code : np.ndarray[int] shape (n,)
+                     0 = no film (pre-injection or spent)
+                     1 = liquid film on wall (wall q_conv = 0, film absorbs)
+                     2 = vapour film on wall (wall q_conv = 0, vaporising)
+                     3 = gaseous mixing (equilibrium CEA at OF_eff)
 """
 
 import numpy as np
@@ -130,7 +153,7 @@ def _bl_thickness(x: float, cea: CEAResult, M_local: float) -> float:
 def compute_film_taw(flow:   FlowSolution,
                      geom:   EngineGeometry,
                      cea:    CEAResult,
-                     config: EngineConfig) -> np.ndarray:
+                     config: EngineConfig):
     """
     Compute effective adiabatic wall temperature T_aw_eff [K] at every
     axial station, accounting for liquid + gaseous film cooling.
@@ -154,18 +177,35 @@ def compute_film_taw(flow:   FlowSolution,
     n   = len(flow.x)
     dx  = config.dx
 
+    # Core OF (propellant OF excluding film) — used as the baseline surface-layer
+    # composition. In the absence of film mixing, OF_eff = OF_core everywhere.
+    OF_core = float(config.OF) if config.OF is not None else 2.0
+    OF_eff_arr = np.full(n, OF_core)
+    phase_code = np.zeros(n, dtype=np.int8)   # 0 everywhere by default
+
     # Bare T_aw at each station (no film)
     T_aw_gas = np.array([_T_aw_bare(float(flow.M[i]), cea) for i in range(n)])
     T_aw_eff = T_aw_gas.copy()
 
     # Short-circuit if film cooling not configured
     if config.film_fraction <= 0.0:
-        return T_aw_eff
+        return T_aw_eff, OF_eff_arr, phase_code
 
     # Film mass flow [kg/s] — fraction of coolant flow
     mdot_film = config.film_fraction * (config.mdot_coolant or 0.0)
     if mdot_film <= 0.0:
-        return T_aw_eff
+        return T_aw_eff, OF_eff_arr, phase_code
+
+    # Diagnostic trackers for film heating / vaporisation phase lengths
+    x_heat_end = None   # x where T_f reaches T_sat
+    x_vap_end  = None   # x where ṁ_f → 0
+
+    # Surface-layer mass budget for RPA's "Relative thickness of near-wall layer"
+    # knob.  ṁ_s = δ_rel · ṁ_total.  Film vapour mixing into this layer shifts
+    # local OF toward fuel-rich, which changes Bartz property group μ^0.2·Cp/Pr^0.6.
+    delta_rel    = max(float(config.film_BL_thickness), 1e-6)
+    mdot_s       = delta_rel * geom.mdot
+    mdot_film_0  = mdot_film   # initial film flow (kg/s)
 
     fluid         = config.film_coolant
     T_film_inlet  = config.film_T_inlet
@@ -213,46 +253,62 @@ def compute_film_taw(flow:   FlowSolution,
             break
 
         if phase == "liquid":
-            # --- Phase 1: Liquid heating (RPA p.10) ---
-            # Bartz HTC drives heat into film (dominant thermal resistance)
+            # --- Phase 1: Liquid heating (Ponomarenko RPA p.10) ---
+            # Convective heat is absorbed by the liquid film; wall q_conv ≈ 0.
+            # ODE:  dT_f/dx = 2πR · q_w^{T_f} / (η · ṁ_f · c̄_f)
+            # where q_w^{T_f} = h_g(T_f) · (T_aw_bare − T_f).
+            # η (film stability, RPA Fig.2) DIVIDES ṁ_f: low-Re, unstable
+            # films act as if less coolant mass is participating, so T_f
+            # rises faster.
+            eta_stab = _film_stability(m_film, r, mu_film_liq)
+
             A   = float(flow.A[i])
             h_g = _bartz_h(M, A, T_film, cea, geom)
             q_f = h_g * (T_aw_i - T_film)
             q_f = max(q_f, 0.0)
 
-            # Wall sees film temperature
-            T_aw_eff[i] = T_film
+            # Wall q_conv suppressed externally (phase_code=1).  T_aw_eff
+            # is set to T_film just for bookkeeping/plotting — solver
+            # never multiplies by h_g at this station.
+            T_aw_eff[i]   = T_film
+            OF_eff_arr[i] = OF_core
+            phase_code[i] = 1
 
-            # Film stability coefficient η (RPA Figure 2)
-            eta_stab = _film_stability(m_film, r, mu_film_liq)
-
-            # Heat film:  dTf = 2πR·q / (η·ṁf·Cp) · dx
             circ       = 2.0 * np.pi * r
             dT_film_dx = circ * q_f / (eta_stab * m_film * Cp_film)
             T_film    += dT_film_dx * dx
 
             if T_film >= T_sat:
-                T_film = T_sat
-                phase  = "vapour"
+                T_film     = T_sat
+                x_heat_end = x
+                phase      = "vapour"
+                print(f"  Film reaches T_sat at x = {x*1000:.1f} mm")
 
         elif phase == "vapour":
-            # --- Phase 2: Vaporisation (RPA p.11) ---
+            # --- Phase 2: Vaporisation (Ponomarenko RPA p.11) ---
+            # Film pinned at T_sat, gas-side flux consumed as latent heat.
+            # ODE:  dṁ_f/dx = 2πR · q_w^{T_sat} / Q_vap
+            # where q_w^{T_sat} = h_g(T_sat) · (T_aw_bare − T_sat).
+            # Ponomarenko's Eq. does NOT include η here.
             A   = float(flow.A[i])
             h_g = _bartz_h(M, A, T_sat, cea, geom)
             q_f = h_g * (T_aw_i - T_sat)
             q_f = max(q_f, 0.0)
 
-            T_aw_eff[i] = T_sat
+            # Wall q_conv suppressed externally (phase_code=2).
+            T_aw_eff[i]   = T_sat
+            OF_eff_arr[i] = OF_core
+            phase_code[i] = 2
 
-            # Evaporate:  dṁf = 2πR·q / Q_vap · dx
             circ       = 2.0 * np.pi * r
             dm_film_dx = -circ * q_f / L_lv
             m_film    += dm_film_dx * dx
             m_film     = max(m_film, 0.0)
 
             if m_film <= 0.0:
-                x_vap = x
-                phase = "gaseous"
+                x_vap     = x
+                x_vap_end = x
+                phase     = "gaseous"
                 print(f"  Film fully vaporised at x = {x*1000:.1f} mm")
 
         elif phase == "gaseous":
@@ -277,6 +333,17 @@ def compute_film_taw(flow:   FlowSolution,
             # Modified adiabatic wall temperature
             T_aw_eff[i] = eta * T_sat + (1.0 - eta) * T_aw_i
 
+            # Surface-layer OF_eff:
+            # Film vapour in the surface layer decays as η → 0 (Vasiliev
+            # turbulent mixing dilutes film into the surface layer).  Capped at
+            # the available layer mass ṁ_s so OF_eff can't go below the
+            # pure-film limit.
+            m_fv   = min(mdot_film_0 * eta, mdot_s)
+            w      = m_fv / mdot_s                     # film mass fraction of layer
+            denom  = (1.0 - w) + w * (1.0 + OF_core)
+            OF_eff_arr[i] = max((1.0 - w) * OF_core / denom, 1.0)  # clamp to LUT min
+            phase_code[i] = 3
+
             if eta < 0.01:
                 phase = "spent"
                 print(f"  Gaseous film spent (η<1%) at x = {x*1000:.1f} mm")
@@ -285,8 +352,11 @@ def compute_film_taw(flow:   FlowSolution,
     reduction = np.mean(T_aw_gas[i_start:] - T_aw_eff[i_start:])
     print(f"  Mean T_aw reduction (film zone): {reduction:.1f} K")
     print(f"  Phase at exit: {phase}")
+    of_min = float(np.min(OF_eff_arr[i_start:]))
+    print(f"  Surface-layer OF_eff range (film zone): "
+          f"{of_min:.3f} → {OF_core:.3f}  (δ_rel={delta_rel:.3f})")
 
-    return T_aw_eff
+    return T_aw_eff, OF_eff_arr, phase_code
 
 
 # ---------------------------------------------------------------------------

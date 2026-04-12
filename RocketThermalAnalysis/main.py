@@ -13,6 +13,8 @@ from geometry import size_engine, plot_contour, nozzle_radius
 from flow_solver import solve_flow
 from heat_transfer import ChannelGeometry, solve_thermal, plot_thermal
 from film_cooling import compute_film_taw
+from cea_lookup import build_of_lut
+from dataclasses import replace
 
 
 # =============================================================================
@@ -319,11 +321,38 @@ def run():
     flow = solve_flow(geom, cea_result, config, xf=chan_geom.x_j[-1])
 
     # --- Step 4: Film cooling T_aw correction (if configured) ---
-    T_aw_eff = compute_film_taw(flow, geom, cea_result, config)
+    T_aw_eff, OF_eff, phase_code = compute_film_taw(flow, geom, cea_result, config)
+
+    # --- Step 4b: Surface-layer CEA lookup for Bartz h_gas ---
+    # RPA evaluates Bartz on the fuel-rich surface layer only AFTER the film
+    # has vaporised and mixed into the gas (phase_code == 3).  In the liquid
+    # (1) and vapour (2) phases the film is a wall-adhered layer and the gas
+    # surface layer is unchanged from the unfilmed core — use frozen core CEA.
+    cea_per_station = None
+    if config.film_fraction > 0.0:
+        of_lut = build_of_lut(config)
+        cea_per_station = []
+        for i, pc in enumerate(phase_code):
+            if pc == 3:
+                # Gaseous mixing — equilibrium CEA at shifted OF_eff
+                props = of_lut.at(float(OF_eff[i]))
+                cea_per_station.append(replace(
+                    cea_result,
+                    T_c       = props["T_c"],
+                    visc_c    = props["visc_c"],
+                    Cp_froz_c = props["Cp_c"],    # equilibrium
+                    Pr_froz_c = props["Pr_c"],    # equilibrium
+                    gamma_c   = props["gamma_c"],
+                    C_star    = props["C_star"]))
+            else:
+                # No film, liquid, or vapour — unchanged core (frozen)
+                cea_per_station.append(cea_result)
 
     # --- Step 5: Thermal analysis ---
     thermal = solve_thermal(flow, geom, cea_result, chan_geom, config,
-                            T_aw_eff=T_aw_eff if config.film_fraction > 0.0 else None)
+                            T_aw_eff=T_aw_eff if config.film_fraction > 0.0 else None,
+                            cea_per_station=cea_per_station,
+                            phase_code=phase_code if config.film_fraction > 0.0 else None)
 
     # --- Step 5b: Iterate film temp if using regen exit as injection ---
     if config.film_fraction > 0.0 and config.film_T_from_regen:
@@ -336,9 +365,25 @@ def run():
             print(f"\n--- Film iteration {film_iter + 1}: "
                   f"T_film_inlet {config.film_T_inlet:.1f} → {T_regen_exit:.1f} K ---")
             config.film_T_inlet = T_regen_exit
-            T_aw_eff = compute_film_taw(flow, geom, cea_result, config)
+            T_aw_eff, OF_eff, phase_code = compute_film_taw(flow, geom, cea_result, config)
+            cea_per_station = []
+            for i, pc in enumerate(phase_code):
+                if pc == 3:
+                    props = of_lut.at(float(OF_eff[i]))
+                    cea_per_station.append(replace(
+                        cea_result,
+                        T_c       = props["T_c"],
+                        visc_c    = props["visc_c"],
+                        Cp_froz_c = props["Cp_c"],
+                        Pr_froz_c = props["Pr_c"],
+                        gamma_c   = props["gamma_c"],
+                        C_star    = props["C_star"]))
+                else:
+                    cea_per_station.append(cea_result)
             thermal = solve_thermal(flow, geom, cea_result, chan_geom, config,
-                                    T_aw_eff=T_aw_eff)
+                                    T_aw_eff=T_aw_eff,
+                                    cea_per_station=cea_per_station,
+                                    phase_code=phase_code)
 
     plot_thermal(thermal, geom, config)
 

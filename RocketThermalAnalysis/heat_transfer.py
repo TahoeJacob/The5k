@@ -382,7 +382,8 @@ def _gas_heat(x: float, M: float, A: float, T_hw: float, dx: float,
               cea: CEAResult, geom: EngineGeometry,
               T_aw_eff: float = None,
               h_gas_override: float = None,
-              C_bartz: float = 0.026):
+              C_bartz: float = 0.026,
+              suppress: bool = False):
     """
     Gas-side heat quantities at axial station x.
 
@@ -394,6 +395,12 @@ def _gas_heat(x: float, M: float, A: float, T_hw: float, dx: float,
     h_gas_override : float, optional
         Pre-computed h_gas from integral BL solver [W/(m²·K)].
         If None, the simplified Bartz (Eq. 50) is used.
+    suppress : bool
+        If True, return zero wall convective flux.  Used for stations
+        shielded by an intact liquid or vaporising film (Ponomarenko
+        RPA thermal p.10–11): all gas-side convective heat is absorbed
+        by the film, none reaches the wall.  h_gas is still reported
+        for diagnostics.
 
     Returns
     -------
@@ -403,6 +410,10 @@ def _gas_heat(x: float, M: float, A: float, T_hw: float, dx: float,
     """
     chan_w, _, _, chan_land = chan_geom.at(x)
     h_g    = h_gas_override if h_gas_override is not None else _bartz_h(M, A, T_hw, cea, geom, C=C_bartz)
+
+    if suppress:
+        return 0.0, 0.0, h_g
+
     T_aw_v = T_aw_eff if T_aw_eff is not None else _T_aw(M, cea)
 
     heatflux = h_g * (T_aw_v - T_hw)
@@ -913,6 +924,7 @@ def _solve_wall_2d(x: float, M: float, A: float,
                    T_aw_eff: float = None,
                    h_gas_override: float = None,
                    C_bartz: float = 0.026,
+                   suppress: bool = False,
                    tol: float = 1.0, max_iter: int = 15):
     """
     2-D wall conduction solve at one axial station.
@@ -948,7 +960,7 @@ def _solve_wall_2d(x: float, M: float, A: float,
     Re_out = Nu_out = Dh_out = v_out = rho_out = f_out = h_enth_out = 0.0
 
     for it in range(max_iter):
-        # Gas-side HTC
+        # Gas-side HTC (still reported for diagnostics even when suppressed)
         if h_gas_override is not None:
             h_g = h_gas_override
         else:
@@ -961,10 +973,15 @@ def _solve_wall_2d(x: float, M: float, A: float,
         Dh_out, v_out, rho_out, f_out = Dh_c, v_c, rho_c, f_c
         h_enth_out = props.h
 
+        # When film shields the wall, convective gas-side coupling is zero.
+        # Pass h_gas_eff=0 to the Laplace solve so the wall equilibrates
+        # to the coolant only (adiabatic hot face).
+        h_g_eff = 0.0 if suppress else h_g
+
         # Solve 2-D wall
         T_field, node_map, solid_nodes, xn, yn, is_void = _build_wall_2d(
             x_nodes, y_nodes, chan_w_half, chan_t_val,
-            h_g, T_aw_v, h_c, T_cool, config.wall_k)
+            h_g_eff, T_aw_v, h_c, T_cool, config.wall_k)
 
         # Extract results
         T_hw_new, T_hw_max, T_cw_new, q_half = _extract_wall_results(
@@ -995,7 +1012,8 @@ def _newton_solve(x: float, M: float, A: float,
                   config: EngineConfig, mdot_per_ch: float,
                   T_hw0: float, T_cw0: float,
                   tol: float = 0.1, max_iter: int = 50,
-                  T_aw_eff: float = None):
+                  T_aw_eff: float = None,
+                  suppress: bool = False):
     """
     Newton-Raphson solve for (T_hw, T_cw) satisfying the thermal circuit:
 
@@ -1014,7 +1032,7 @@ def _newton_solve(x: float, M: float, A: float,
     def F(T_vec):
         T_hw, T_cw = float(T_vec[0]), float(T_vec[1])
         q_g, *_  = _gas_heat(x, M, A, T_hw, dx, chan_geom, cea, geom,
-                              T_aw_eff=T_aw_eff)
+                              T_aw_eff=T_aw_eff, suppress=suppress)
         q_w      = _q_wall(T_hw, T_cw, chan_w, chan_land, chan_t, dx, config.wall_k)
         q_c, *_  = _coolant_heat(x, T_cw, T_cool, P_cool, s, dx,
                                   chan_geom, geom, config, mdot_per_ch)
@@ -1059,7 +1077,9 @@ def solve_thermal(flow: FlowSolution,
                   tol_K: float = 1.0,
                   relax: float = 0.8,
                   max_outer: int = 30,
-                  T_aw_eff: np.ndarray = None) -> ThermalSolution:
+                  T_aw_eff: np.ndarray = None,
+                  cea_per_station: list = None,
+                  phase_code: np.ndarray = None) -> ThermalSolution:
     """
     Coupled 1-D regenerative cooling thermal analysis.
 
@@ -1127,6 +1147,8 @@ def solve_thermal(flow: FlowSolution,
     _T_aw_eff_arr = T_aw_eff  # may be None (no film) or np.ndarray (film active)
 
     film_active = (_T_aw_eff_arr is not None)
+    cea_override_active = (cea_per_station is not None)
+    phase_active = (phase_code is not None)
     print(f"\n--- Thermal Solver ---")
     n_ch_min = int(round(float(n_chan_at_flow.min())))
     n_ch_max = int(round(float(n_chan_at_flow.max())))
@@ -1144,6 +1166,9 @@ def solve_thermal(flow: FlowSolution,
           f"P_in: {config.P_coolant_inlet/1e5:.1f} bar")
     if film_active:
         print(f"  Film cooling ACTIVE — T_aw_eff supplied ({config.film_fraction*100:.1f}% film)")
+    if cea_override_active:
+        print(f"  Gas-side Bartz: per-station surface-layer CEA override "
+              f"(δ_rel={config.film_BL_thickness:.3f})")
     if config.wall_2d:
         print(f"  Wall model: 2-D conduction (Betti quasi-2D)")
     else:
@@ -1180,6 +1205,14 @@ def solve_thermal(flow: FlowSolution,
             # Film-corrected T_aw for this station (None = use bare Bartz)
             T_aw_k = float(_T_aw_eff_arr[k]) if film_active else None
 
+            # Per-station CEA (surface-layer composition under film cooling).
+            # Falls back to global cea when no override supplied.
+            cea_k = cea_per_station[k] if cea_override_active else cea
+
+            # Wall-convective suppress: stations inside an intact liquid or
+            # vaporising film (Ponomarenko phases 1 & 2) see zero wall q_conv.
+            suppress_k = bool(phase_active and phase_code[k] in (1, 2))
+
             # Pre-computed h_gas from integral BL (None = use simplified Bartz)
             h_gas_k = float(h_gas_bl[k]) if h_gas_bl is not None else None
 
@@ -1191,18 +1224,23 @@ def solve_thermal(flow: FlowSolution,
                  h_g, h_c, Re, Nu, Dh, v, rho, f_c,
                  h_enth) = _solve_wall_2d(
                     x, M, A, T_cool, P_cool, s, dx,
-                    chan_geom, cea, geom, config, mdot_per_ch_k,
+                    chan_geom, cea_k, geom, config, mdot_per_ch_k,
                     T_hw_nwt, T_cw_nwt, T_aw_eff=T_aw_k,
                     h_gas_override=h_gas_k,
-                    C_bartz=config.C_bartz)
+                    C_bartz=config.C_bartz,
+                    suppress=suppress_k)
 
                 T_hw_arr[k] = relax * T_hw_nwt + (1.0 - relax) * T_hw_prev[k]
                 T_cw_arr[k] = relax * T_cw_nwt + (1.0 - relax) * T_cw_prev[k]
 
-                T_aw_v = T_aw_k if T_aw_k is not None else _T_aw(M, cea)
-                hf = h_g * (T_aw_v - T_hw_arr[k])
-                chan_w_k, _, _, chan_land_k = chan_geom.at(x)
-                q_g = hf * (chan_w_k + chan_land_k) * dx
+                if suppress_k:
+                    hf  = 0.0
+                    q_g = 0.0
+                else:
+                    T_aw_v = T_aw_k if T_aw_k is not None else _T_aw(M, cea_k)
+                    hf = h_g * (T_aw_v - T_hw_arr[k])
+                    chan_w_k, _, _, chan_land_k = chan_geom.at(x)
+                    q_g = hf * (chan_w_k + chan_land_k) * dx
 
                 T_cool_new, P_cool_new = _advance_coolant(
                     x, q_c, T_cool, P_cool, dx, f_c, rho, v, Dh,
@@ -1211,17 +1249,19 @@ def solve_thermal(flow: FlowSolution,
                 # --- 1-D wall conduction path (original) ---
                 T_hw_nwt, T_cw_nwt = _newton_solve(
                     x, M, A, T_cool, P_cool, s, dx,
-                    chan_geom, cea, geom, config, mdot_per_ch_k,
+                    chan_geom, cea_k, geom, config, mdot_per_ch_k,
                     T_hw_nwt, T_cw_nwt,
-                    T_aw_eff=T_aw_k)
+                    T_aw_eff=T_aw_k,
+                    suppress=suppress_k)
 
                 T_hw_arr[k] = relax * T_hw_nwt + (1.0 - relax) * T_hw_prev[k]
                 T_cw_arr[k] = relax * T_cw_nwt + (1.0 - relax) * T_cw_prev[k]
 
                 q_g, hf, h_g = _gas_heat(x, M, A, T_hw_arr[k], dx, chan_geom,
-                                          cea, geom, T_aw_eff=T_aw_k,
+                                          cea_k, geom, T_aw_eff=T_aw_k,
                                           h_gas_override=h_gas_k,
-                                          C_bartz=config.C_bartz)
+                                          C_bartz=config.C_bartz,
+                                          suppress=suppress_k)
                 (q_c, T_cool_new, P_cool_new,
                  h_c, Re, Nu, Dh, v, rho) = _coolant_heat(
                     x, T_cw_arr[k], T_cool, P_cool, s, dx,
