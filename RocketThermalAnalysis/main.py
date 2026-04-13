@@ -24,23 +24,23 @@ config = EngineConfig(
     # Propellants
     fuel        = "RP-1",
     oxidizer    = "LOX",
-    coolant     = "RP1",        # CoolProp name (used later by coolant_props)
+    coolant     = "RP1",
 
-    # Performance
-    P_c   = 20.0e5,             # 60 bar [Pa]
-    F_vac = 3000.0,             # [N]
+    # Performance — matches RPA CuCrZr_2.5kNEnging.txt
+    P_c   = 20.0e5,             # 20 bar
+    F_vac = 3074.0,             # 2.5 kN SL (3.074 kN vac)
 
-    # O/F — uncomment / set both for sweep + analysis
+    # O/F
     OF        = 2.0,
     OF_sweep  = None,
 
     # CEA
     frozen = False,
 
-    # Geometry
-    exp_ratio   = 8.0,
-    cont_ratio  = 6.0,
-    L_star      = 1.143,        # 45 inch — typical RP-1/LOX
+    # Geometry — matches RPA
+    exp_ratio   = 6.0,          # Ae/At (RPA)
+    cont_ratio  = 8.0,          # Ac/At (RPA)
+    L_star      = 1.27,         # 1270 mm (RPA)
 
     # Nozzle contour
     theta1  = 30.0,
@@ -50,38 +50,39 @@ config = EngineConfig(
     RU_mult = 1.5,
     RD_mult = 0.382,
 
-    # Wall material (6061-T6 Al)
-    wall_k         = 16.0,     # [W/m*K]
-    wall_roughness = 12.0e-6,   # SLM AlSi10Mg as-printed (Ra ~10-12 µm)
-    wall_melt_T    = 1100.0,     # [K]
+    # Wall material — Copper (CuCrZr) — operational limit, not melting
+    wall_k         = 300.0,     # [W/m·K]
+    wall_roughness = 6.3e-6,    # SLM
+    wall_melt_T    = 1073.0,    # [K] CuCrZr strength limit (800°C, Waugh 2021)
 
     # Coolant inlet (counter-current from nozzle exit)
-    T_coolant_inlet = 290.0,    # [K]
-    P_coolant_inlet = 35.0e5,   # [Pa]
-    mdot_coolant    = None,     # computed from OF + mdot_total
+    T_coolant_inlet = 298.0,    # [K]
+    P_coolant_inlet = 35.0e5,   # 35 bar [Pa]
+    mdot_coolant    = None,
 
-    # Channels — bifurcating: 40 at throat, splits to 80 in chamber/exit
-    N_channels             = 40,    # fallback (used if throat/chamber not set)
-    N_channels_throat      = 30,
-    N_channels_chamber     = 60,
-    channel_split_r_ratio  = 2.0,   # split when local r > 2·R_t
+    # Channels — bifurcating: 53 at throat, 106 in chamber (RPA)
+    N_channels             = 53,
+    N_channels_throat      = 53,
+    N_channels_chamber     = 106,
+    channel_split_r_ratio  = 2.0,
+    channel_split_transition = 10e-3,
     dx                     = 1e-3,
 
-    # Tapered channel height: shallow at throat for high velocity, deeper
-    # in the chamber and exit to keep ΔP manageable
-    chan_h_throat  = 0.6e-3,
-    chan_h_chamber = 0.8e-3,
-    chan_h_exit    = 0.8e-3,
+    # Tapered channel height — matches RPA 3-section design
+    chan_h_throat  = 1.1e-3,    # Sec2 throat
+    chan_h_chamber = 1.3e-3,    # Sec1 chamber
+    chan_h_exit    = 1.5e-3,    # Sec3 exit
 
-    # Film Cooling
-    film_fraction  = 0.22,   # 22% of fuel flow as film
-    film_inject_x  = 0.0,    # inject at injector face
+    # Film cooling — 5% (matches RPA film slot at injector face)
+    film_fraction  = 0.05,
+    film_inject_x  = 0.0,
     film_coolant   = "RP1",
-    film_T_inlet   = 400.0,
-    film_Kt        = 0.0013, # turbulent mixing intensity (Vasiliev 1993, range 0.0005-0.002)
+    film_T_inlet   = 298.0,
+    film_Kt        = 0.0013,
+    film_model     = "simon",
 
     wall_2d=True,
-    use_integral_bl=False,  # integral BL path made h_gas ~70% low — not RPA's 0.025 knob
+    use_integral_bl=False,
     C_bartz=0.026,
 )
 
@@ -164,16 +165,19 @@ def run():
     geom = size_engine(config, cea_result)
     plot_contour(geom, dx=5e-4)
 
-    # Derive coolant mass flow if not set (assume fuel-cooled)
+    # Derive coolant mass flow if not set (fuel minus film)
     if config.mdot_coolant is None:
-        config.mdot_coolant = geom.mdot_fuel
-        print(f"\nDerived mdot_coolant = mdot_fuel = {geom.mdot_fuel:.4f} kg/s")
+        config.mdot_coolant = geom.mdot_fuel * (1.0 - config.film_fraction)
+        print(f"\nDerived mdot_coolant = mdot_fuel × (1 - film) = "
+              f"{config.mdot_coolant:.4f} kg/s  "
+              f"(film = {config.film_fraction*100:.0f}%)")
 
     # Define Cooling Channel Geometry
     x_j = np.arange(0, geom.L_c + geom.L_nozzle, config.dx) # Create slices at each dx
-    chan_t = np.full(shape=(len(x_j),), fill_value=0.9e-3) # 0.9mm Constant thickness channel at each slice
-    chan_land = np.full(shape=(len(x_j),), fill_value= 1.0e-3) # 1.0mm Constant land width channel at each slice
-    chan_w = np.zeros(len(x_j)) # Pre-fill in chan_w for each slice with a zero
+    CHAN_W = 1.0e-3  # Constant channel width [m] — matches RPA throat (Sec2)
+    chan_t = np.full(shape=(len(x_j),), fill_value=0.9e-3) # 0.9mm wall thickness
+    chan_w = np.full(shape=(len(x_j),), fill_value=CHAN_W)  # 1.5mm constant width
+    chan_land = np.zeros(len(x_j)) # land = circ/N - width (computed below)
     chan_h = np.zeros(len(x_j))
     n_chan_per_station = np.zeros(len(x_j), dtype=int)
 
@@ -235,16 +239,15 @@ def run():
     else:
         chan_h[:] = 2e-3
 
-    # Calculate width at each slice based off land width
+    # Calculate land at each slice: land = pitch - width
     n_chan_float = np.zeros(len(x_j))
     for i, x in enumerate(x_j):
-        r = nozzle_radius(x, geom, config.dx) # Calculate the radius of the slice
-        N_local = n_local_at(x)               # smoothed Y-cusp transition
+        r = nozzle_radius(x, geom, config.dx)
+        N_local = n_local_at(x)
         n_chan_float[i] = N_local
         n_chan_per_station[i] = int(round(N_local))
-        circ = 2*np.pi*r # Calculate the circumference of the slice
-        avail_width = circ/N_local # Calculate available width at each slice
-        chan_w[i] = avail_width - chan_land[i] # Calculate width at each slice
+        circ = 2*np.pi*r
+        chan_land[i] = circ/N_local - CHAN_W
 
     # Report bifurcation
     if N_chamber != N_throat:
