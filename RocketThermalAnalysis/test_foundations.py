@@ -55,9 +55,9 @@ RS25_CONFIG = EngineConfig(
     theta1=25.4167,         # Hardware convergence half-angle [deg]
     thetaD=37.0,
     thetaE=5.3738,
-    R1_mult=0.3196,         # R_1/R_t = 1.73921/5.4416 (hardware, dimensionless)
-    RU_mult=0.9469,         # R_U/R_t = 5.1527/5.4416
-    RD_mult=0.3711,         # R_D/R_t = 2.019/5.4416
+    R_chamber_mult=0.3196,     # hardware, dimensionless (chamber-side arc)
+    R_throat_conv_mult=0.9469, # R_U/R_t = 5.1527/5.4416 (throat conv fillet)
+    R_throat_div_mult=0.3711,  # R_D/R_t = 2.019/5.4416  (throat div fillet)
     wall_k=350.0,           # Copper alloy (NARloy-Z)
     wall_roughness=1.6e-6,  # Milled / electroformed
     wall_melt_T=1356.0,     # Cu melting point [K]
@@ -72,7 +72,7 @@ RPA_5KN_CONFIG = EngineConfig(
     P_c=20e5, F_vac=5500,
     OF=2.4, exp_ratio=8.0, cont_ratio=6.0, L_star=1.143,
     theta1=30.0, thetaD=30.0, thetaE=12.0,
-    R1_mult=0.5, RU_mult=1.5, RD_mult=0.382,
+    R_chamber_mult=0.5, R_throat_conv_mult=1.5, R_throat_div_mult=0.382,
     wall_k=167.0,           # 6061-T6 Al
     wall_roughness=6.3e-6,  # SLM 3D-print
     wall_melt_T=855.0,
@@ -263,7 +263,7 @@ def test_geometry_internal_consistency():
     # Compute volumes from geometry
     R_t, R_c = geom.R_t, geom.R_c
     th1 = np.deg2rad(cfg.theta1)
-    RU  = geom.RU
+    RU  = geom.R_throat_conv
     L_cone = ((R_t * (np.sqrt(cfg.cont_ratio) - 1) + RU * (1/np.cos(th1) - 1)) / np.tan(th1))
     V_cone = (np.pi / 3) * L_cone * (R_c**2 + R_t**2 + R_c * R_t)
     V_cylinder = geom.L_e * geom.A_c

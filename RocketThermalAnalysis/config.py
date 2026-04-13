@@ -48,9 +48,9 @@ class EngineConfig:
     thetaD: float = 30.0    # Initial divergence half-angle (bell nozzle)
     thetaE: float = 12.0    # Nozzle exit half-angle
     # Throat radius of curvature multipliers (as fraction of throat radius)
-    R1_mult: float = 1.5    # Inner convergence fillet
-    RU_mult: float = 1.5    # Outer convergence curve
-    RD_mult: float = 0.382  # Divergence throat fillet
+    R_chamber_mult:    float = 1.5    # Big chamber-side converging arc
+    R_throat_conv_mult: float = 1.5   # Convergent-side throat fillet (small)
+    R_throat_div_mult:  float = 0.382 # Divergent-side throat fillet
 
     # -----------------------------------------------------------------------
     # Wall material
