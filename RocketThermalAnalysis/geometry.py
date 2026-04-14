@@ -430,6 +430,15 @@ def _dxf_point(layer, x, y):
             f'\n10\n{x:.5f}\n20\n{y:.5f}\n30\n0.0')
 
 
+def _dxf_lwpolyline(layer, pts, closed=True):
+    """Closed (or open) LWPOLYLINE from a list of (x, y) tuples."""
+    flag = 1 if closed else 0
+    head = ('0\nLWPOLYLINE\n8\n' + layer +
+            f'\n90\n{len(pts)}\n70\n{flag}')
+    body = ''.join(f'\n10\n{x:.5f}\n20\n{y:.5f}' for x, y in pts)
+    return head + body
+
+
 def _bell_control_points(geom: 'EngineGeometry'):
     """
     Return (Nx, Ny, Qx, Qy, Ex, Ey) for the bell quadratic Bezier in
@@ -625,30 +634,52 @@ def export_dxf(geom: 'EngineGeometry', chan_geom, out_dir: str = 'exports'):
     throat lies at (0, R_t) and the X-axis IS the revolve axis.
 
     Files:
-      engine_contour.dxf  — inner wall as LINE+ARC+ARC+LINE+ARC+ARC+POLY (bell)
-      channel_paths.dxf   — same primitives offset to channel floor / center /
-                            ceiling on three layers
+      engine_contour.dxf  — closed revolve profile: inner (hot-gas) wall
+                            on layer CONTOUR_HOT and outer (coolant-side)
+                            wall on layer CONTOUR_COOL, offset radially
+                            by the wall thickness t_w, capped at both
+                            ends so the result is a closed region ready
+                            to revolve.
+      channel_paths.dxf   — channel floor / center / ceiling contours on
+                            three layers (offset from hot wall).
     """
     import os
     os.makedirs(out_dir, exist_ok=True)
 
-    # ---------- 1) Inner-wall contour ----------
-    contour_ents, _ = _contour_primitives(geom, layer='CONTOUR', radial_offset=0.0)
-    contour_dxf = os.path.join(out_dir, 'engine_contour.dxf')
-    _write_dxf(contour_dxf, contour_ents)
-
-    # ---------- 2) Channel paths ----------
-    # Use representative wall thickness and channel height (taper-averaged
-    # at throat) for the offset curves.  Real channel cross-section varies
-    # axially — these are visualization aids, not stress-grade geometry.
+    # Representative wall thickness and channel height (taper-averaged).
     t_w_arr = np.asarray(chan_geom.chan_t)
     h_arr   = np.asarray(chan_geom.chan_h)
     t_rep   = float(np.median(t_w_arr))
     h_rep   = float(np.median(h_arr))
 
+    # ---------- 1) Closed wall contour (hot + cool + end caps) ----------
+    L_c_mm = geom.L_c  * 1000.0   # throat-centered: injector at -L_c, exit at +L_n
+    L_n_mm = geom.L_nozzle * 1000.0
+    R_c_mm = geom.R_c * 1000.0
+    R_e_mm = geom.R_e * 1000.0
+    t_w_mm = t_rep    * 1000.0
+
+    hot_ents,  _ = _contour_primitives(geom, layer='CONTOUR_HOT',  radial_offset=0.0)
+    cool_ents, _ = _contour_primitives(geom, layer='CONTOUR_COOL', radial_offset=t_rep)
+
+    # End caps (injector-face and nozzle-exit) joining hot ↔ cool walls
+    cap_injector = _dxf_line('CONTOUR_CAP',
+                             -L_c_mm, R_c_mm,
+                             -L_c_mm, R_c_mm + t_w_mm)
+    cap_exit     = _dxf_line('CONTOUR_CAP',
+                              L_n_mm, R_e_mm,
+                              L_n_mm, R_e_mm + t_w_mm)
+
+    contour_ents = hot_ents + cool_ents + [cap_injector, cap_exit]
+    contour_dxf = os.path.join(out_dir, 'engine_contour.dxf')
+    _write_dxf(contour_dxf, contour_ents)
+
+    # ---------- 2) Channel paths ----------
+
     floor_off  = t_rep
     center_off = t_rep + 0.5 * h_rep
     ceil_off   = t_rep + h_rep
+    # (t_rep / h_rep already computed above)
 
     floor_ents,  _ = _contour_primitives(geom, 'CH_FLOOR',   radial_offset=floor_off)
     center_ents, _ = _contour_primitives(geom, 'CH_CENTER',  radial_offset=center_off)
@@ -661,13 +692,146 @@ def export_dxf(geom: 'EngineGeometry', chan_geom, out_dir: str = 'exports'):
     # exact 3-control-point spline in OnShape if the polyline isn't smooth enough.
     _, _, bell_ctrl = _bell_control_points(geom)
     print(f"\n--- DXF export (throat-centered, x=0 at throat) ---")
-    print(f"  {contour_dxf}  (LINE/ARC primitives + 7 snap points)")
+    print(f"  {contour_dxf}  (hot+cool walls, t_w={t_w_mm:.2f} mm, end-capped)")
     print(f"  {paths_dxf}   (offset {floor_off*1000:.2f}/{center_off*1000:.2f}/"
           f"{ceil_off*1000:.2f} mm on 3 layers)")
     print(f"  Bell Bezier control points (mm, throat-centered) — for manual")
     print(f"  3-pt control-point spline in OnShape if you want the exact curve:")
     for label, (x, y) in zip(('N (start)', 'Q (ctrl)', 'E (exit) '), bell_ctrl):
         print(f"    {label}  ({x:9.4f}, {y:9.4f})")
+
+    # ---------- 3) Top-down land plan ----------
+    land_dxf = os.path.join(out_dir, 'land_plan.dxf')
+    n_top = export_land_plan_dxf(geom, chan_geom, land_dxf)
+    print(f"  {land_dxf}   (top-down land strip, {n_top} key vertices per edge)")
+
+
+def export_land_plan_dxf(geom: 'EngineGeometry', chan_geom,
+                         filename: str):
+    """
+    Write a top-down DXF showing ONE land as a closed strip along the
+    engine axis, with a MINIMAL vertex count.
+
+    Only one vertex per "slope change":
+      - straight chamber (f1) and linear taper (f3): 2 vertices each
+      - curved segments (chamber arc, throat fillets, bell): start +
+        mid + end (3 vertices each), so each curve can be fit to an
+        arc/spline and radius-dimensioned in OnShape
+      - bifurcation transitions: extra vertex at each N-change location
+
+    Coordinates:
+      X = axial position, throat-centered, millimetres
+      Y = circumferential land half-width, millimetres (±land/2)
+    """
+    x_j   = np.asarray(chan_geom.x_j)
+    land  = np.asarray(chan_geom.chan_land)
+    chw   = np.asarray(chan_geom.chan_w)
+    n_ch  = np.asarray(getattr(chan_geom, 'n_chan', np.zeros_like(x_j)))
+    L_c   = geom.L_c
+    L_total = geom.L_c + geom.L_nozzle
+    M     = 1000.0
+
+    # Bifurcation extent: N_throat = min(n_ch), N_chamber = max(n_ch).
+    # Fraction of "extra" land present at each station (0 at throat, 1 in
+    # fully-bifurcated chamber, linear ramp through transitions).
+    N_throat_i  = float(np.min(n_ch)) if n_ch.size else 1.0
+    N_chamber_i = float(np.max(n_ch)) if n_ch.size else 1.0
+    if N_chamber_i > N_throat_i + 1e-9:
+        extra_frac = (n_ch - N_throat_i) / (N_chamber_i - N_throat_i)
+    else:
+        extra_frac = np.zeros_like(x_j)
+    extra_land = land * extra_frac   # width of one full extra land [m]
+
+    # --- Collect key x values (injector-face coordinates) ---
+    segs = _segment_breakpoints(geom)
+    curve_labels = {"f2: chamber arc R_chamber",
+                    "f4: throat conv fillet",
+                    "f5: throat div fillet",
+                    "f6: Bezier bell"}
+
+    key_x = set()
+    key_x.add(0.0)
+    key_x.add(L_total)
+    for label, x0, x1, _ in segs:
+        if x1 - x0 < 1e-9:
+            continue
+        key_x.add(x0)
+        key_x.add(x1)
+        if label in curve_labels:
+            key_x.add(0.5 * (x0 + x1))
+
+    # Bifurcation transitions: detect where n_chan actually changes
+    n_chan = getattr(chan_geom, 'n_chan', None)
+    if n_chan is not None:
+        n_arr = np.asarray(n_chan)
+        dn = np.abs(np.diff(n_arr))
+        tol = 0.01 * max(1.0, float(np.max(np.abs(n_arr))))
+        in_trans = False
+        for i, d in enumerate(dn):
+            if d > tol and not in_trans:
+                key_x.add(float(x_j[i]))
+                in_trans = True
+            elif d <= tol and in_trans:
+                key_x.add(float(x_j[i]))
+                in_trans = False
+
+    # Clamp to engine extent and sort
+    key_x = sorted(x for x in key_x if 0.0 <= x <= L_total)
+
+    # Interpolate per-station fields at each key x
+    key_arr = np.asarray(key_x)
+    main_hw_m  = 0.5 * np.interp(key_arr, x_j, land)        # main land half-width
+    chw_m      =       np.interp(key_arr, x_j, chw)          # channel width
+    ext_m      =       np.interp(key_arr, x_j, extra_land)   # full extra-land width
+    ext_hw_m   = 0.5 * ext_m                                 # half of one extra land
+    x_mm       = [(x - L_c) * M for x in key_x]
+    main_hw_mm = [float(h * M) for h in main_hw_m]
+    chw_mm     = [float(c * M) for c in chw_m]
+    ext_hw_mm  = [float(e * M) for e in ext_hw_m]
+
+    # Main land HALF-strip (mirror axis = DXF Y axis, which is the
+    # central axis of the main land).  Left edge sits on the mirror
+    # axis (x = 0); right edge is at +main_hw.  User mirrors this in
+    # OnShape after dimensioning.
+    outer_main = [(float(h),  float(x)) for h, x in zip(main_hw_mm, x_mm)]
+    axis_main  = [(0.0,       float(x)) for x in reversed(x_mm)]
+    main_poly  = outer_main + axis_main
+
+    ents = [_dxf_lwpolyline('LAND_MAIN', main_poly, closed=True)]
+
+    # Right extra half-land — only present in the bifurcated region.
+    # Inner edge (closer to main): x = main_hw + chan_w
+    # Outer edge (farther):         x = main_hw + chan_w + ext_hw
+    inner_x = [mh + w for mh, w in zip(main_hw_mm, chw_mm)]
+    outer_x = [ix + eh for ix, eh in zip(inner_x, ext_hw_mm)]
+
+    tol_mm = 1e-4
+    runs, current = [], []
+    for i, eh in enumerate(ext_hw_mm):
+        if eh > tol_mm:
+            current.append(i)
+        elif current:
+            runs.append(current)
+            current = []
+    if current:
+        runs.append(current)
+
+    for run in runs:
+        i0, i1 = run[0], run[-1]
+        outer_edge = [(outer_x[i], x_mm[i]) for i in run]
+        inner_edge = [(inner_x[i], x_mm[i]) for i in run]
+        # Pinch closed at each end along the inner (main-side) edge
+        poly = ([(inner_x[i0], x_mm[i0])] + outer_edge
+                + [(inner_x[i1], x_mm[i1])] + list(reversed(inner_edge)))
+        ents.append(_dxf_lwpolyline('LAND_EXTRA', poly, closed=True))
+
+    # Snap point at the engine start, end and throat (axial Y = 0 at throat)
+    ents.append(_dxf_point('LAND_SNAP', 0.0, x_mm[0]))
+    ents.append(_dxf_point('LAND_SNAP', 0.0, x_mm[-1]))
+    ents.append(_dxf_point('LAND_SNAP', 0.0, 0.0))
+
+    _write_dxf(filename, ents)
+    return len(outer_main)
 
 
 def export_csv(geom: 'EngineGeometry', chan_geom, out_dir: str = 'exports',

@@ -205,8 +205,9 @@ def run():
             x_cross = x_j[i - 1] + frac * (x_j[i] - x_j[i - 1])
             if x_cross < x_throat and x_split_up is None:
                 x_split_up = x_cross
-            elif x_cross > x_throat:
-                x_split_down = x_cross
+            # Nozzle side intentionally left unsplit — keep N_throat channels
+            # all the way from the throat to the exit (simpler SLM geometry,
+            # no Y-merge in the diverging section).
 
     half_trans = 0.5 * config.channel_split_transition
 
