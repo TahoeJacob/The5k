@@ -37,15 +37,21 @@ P_inlet = 3.5e6      # 35 bar
 mdot    = "auto"     # → mdot_fuel × (1 - film_fraction)
 
 [channels]
-# RPA 3-section bifurcating: 53 at throat, 106 in chamber. 1 mm constant
-# width, 1 mm constant hot-wall thickness, height tapered chamber→throat→exit.
-n_throat         = 53
-n_chamber        = 106
+# Bifurcating: 36 at throat, 72 in chamber. Picked from the N×h×w sweep
+# (scripts/sweep_channels.py) as the SLM/thermal balance — D_h=1.15 mm
+# at the throat (well above the 0.8 mm depowdering floor), land width
+# 1.79 mm (well above the 1.0 mm SLM rib floor), AR≈0.92 (no ceiling
+# sag risk), model T_hw=1152 K.  After the +10% Bartz throat-bias
+# correction (per LUMEN/HARCC validation), bias-corrected T_hw lands
+# right at the 1073 K CuCrZr strength limit.  Width widened from 1.0
+# to 1.2 mm specifically to ease depowdering.
+n_throat         = 36
+n_chamber        = 72
 split_r_ratio    = 2.0
 split_transition = 10e-3
 dx               = 1e-3
 height_taper = [["chamber", 1.3e-3], ["throat", 1.1e-3], ["exit", 1.5e-3]]
-width_taper  = [["chamber", 1.0e-3], ["throat", 1.0e-3], ["exit", 1.0e-3]]
+width_taper  = [["chamber", 1.2e-3], ["throat", 1.2e-3], ["exit", 1.2e-3]]
 wall_t_taper = [["chamber", 1.0e-3], ["throat", 1.0e-3], ["exit", 1.0e-3]]
 
 [film]
