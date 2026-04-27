@@ -1,0 +1,107 @@
+# DLR HARCC subscale — LH2-cooled LOX/H2 test case
+# Source: J. Haemisch, D. Suslov, M. Oschwald, "Experimental and Numerical
+# Investigation of Heat Transfer Processes in Rocket Engine Cooling Channels
+# Operated with Cryogenic Hydrogen and Methane at Supercritical Conditions",
+# DLR Lampoldshausen, 2019. (PDF in elib.dlr.de/128226)
+#
+# *** IMPORTANT CAVEAT ***
+# HARCC is a 200 mm CYLINDRICAL chamber SEGMENT — NOT a complete engine.
+# The test article has no nozzle of its own; it is bolted between an injector
+# head + a 200 mm "Standard-Segment" upstream and a separate cooled nozzle
+# downstream.  Our solver builds a chamber+nozzle from F and P_c, so the
+# generated geometry will NOT match HARCC point-for-point. To compare model
+# vs. paper, look at our predicted q_w and T_w in the CYLINDRICAL CHAMBER
+# REGION ONLY (axial range roughly 0 → L_c).
+#
+# The HARCC has 4 sectors with different aspect-ratio cooling channels.
+# This file uses Sector S1 (the lowest, "conventional" aspect ratio, 1.7).
+# Other sectors: S2 (h=2.8, w=0.8, AR=3.5), S3 (h=9.0?, w=0.3, AR=30),
+# S4 (h=4.6, w=0.5, AR=9.2). Channel counts in the paper are per 90°
+# (S1=25, S2=29, S3=38, S4=34) — multiply by 4 for full-circumference.
+#
+# What's REPORTED in the paper:
+#   - Test case: P_c = 49.1 bar, OF = 3.9, F = 17.0 kN
+#   - mdot_INJ (combustion) = 0.79 kg/s, mdot_HARCC (coolant) = 0.65 kg/s
+#   - Coolant T_in (S1) = 63.5 K, P_out (S1) = 155.3 bar
+#   - mdot per channel (S1) = 7.5 g/s, → 25 channels per 90° sector
+#   - Wall material: copper alloy, k = 350 W/(m·K)
+#   - Surface roughness: Ra = 0.196 µm; equivalent k_s = 1.1 µm (eq. 2)
+#   - Channel S1 geometry: height = 2.0 mm, width = 1.2 mm
+#   - Calorimetric q_w on S1 = 26.3 MW/m² (mean over 200 mm)
+#   - Inverse-method q_w(x): 20.1 MW/m² (in) → 25.2 MW/m² (out)
+#   - Hot-gas-side T_w from experiment (S1): ~250-300 K range (figs 8a, 10a)
+#
+# What's ASSUMED here:
+#   - Chamber diameter D_c = 80 mm forces our derived ε_c via D_t from F+P_c
+#     CEA — the resulting D_c may differ slightly from 80 mm. Tune cont_ratio
+#     after the first run if needed.
+#   - We model the WHOLE engine (chamber + a nozzle) so our solver doesn't
+#     break, but only the chamber section (x < L_c) is comparable to HARCC.
+#   - Standard L* (1.0 m) and bell nozzle defaults — irrelevant for the
+#     chamber-side comparison.
+#   - HARCC test channel inlet conditions are imposed at our coolant inlet
+#     (counter-current entry from nozzle exit). This is approximate — HARCC
+#     is co-flow cooled, but for a 200 mm cylindrical section the difference
+#     is small. (Set film_T_inlet/P_inlet equal to coolant inlet to mimic.)
+
+[propellants]
+fuel     = "LH2"
+oxidizer = "LOX"
+coolant  = "Hydrogen"
+
+[performance]
+P_c    = 4.91e6            # REPORTED — 49.1 bar
+F_vac  = 17000.0           # REPORTED — 17.0 kN
+OF     = 3.9               # REPORTED
+frozen = false
+
+[geometry]
+# Chamber: D_c = 80 mm REPORTED; ε_c computed by our sizer from F+P_c+CEA.
+# We set cont_ratio so that the resulting D_c lands close to 80 mm. Adjust
+# after first run if needed (typical D_t for 17 kN H2/LOX at 49 bar is ~50 mm
+# → cont_ratio ≈ (80/50)² = 2.56). Use 2.6 as initial guess.
+exp_ratio          = 4.0   # ASSUMED — HARCC has no nozzle; pick a small ε
+cont_ratio         = 2.6   # ASSUMED to make D_c land near 80 mm
+L_star             = 0.5   # ASSUMED — short cylinder (HARCC is 200 mm)
+theta1             = 30.0
+thetaD             = 30.0
+thetaE             = 10.0
+R_chamber_mult     = 1.5
+R_throat_conv_mult = 1.5
+R_throat_div_mult  = 0.382
+
+[wall]
+material     = "CuCrZr"    # paper says "copper alloy" with k=350 — pick CuCrZr
+k            = 350.0       # REPORTED — λ = 350 W/(m·K)
+roughness    = 1.1e-6      # REPORTED — k_s = 1.1 µm (eq. 2 in paper)
+melt_T       = 900.0       # ASSUMED — copper alloy strength limit
+T_ref_stress = 293.0
+
+[coolant]
+T_inlet = 63.5             # REPORTED — S1 T_in = 63.5 K
+P_inlet = 1.553e7          # REPORTED — S1 P_out = 155.3 bar (used as inlet)
+mdot    = 0.1875           # = 7.5 g/s × 25 channels = 0.1875 kg/s (Sector S1 only)
+                           # Set this to mdot_HARCC = 0.65 kg/s if all 4 sectors
+                           # are summed. We use S1 only for matched comparison.
+
+[channels]
+# Sector S1: AR 1.7, h = 2.0 mm, w = 1.2 mm, 25 channels per 90° → 100 total.
+n_throat         = 100
+n_chamber        = 100
+split_r_ratio    = 2.0
+split_transition = 10e-3
+dx               = 1e-3
+height_taper = [["chamber", 2.0e-3], ["throat", 2.0e-3], ["exit", 2.0e-3]]
+width_taper  = [["chamber", 1.2e-3], ["throat", 1.2e-3], ["exit", 1.2e-3]]
+wall_t_taper = [["chamber", 1.0e-3], ["throat", 1.0e-3], ["exit", 1.0e-3]]
+                # Hot-wall thickness ASSUMED — the inverse-method recovers it
+                # from thermocouple positions (T1 at 0.7 mm from hot gas).
+
+[film]
+fraction = 0.0
+
+[solver]
+wall_2d         = true
+wall_2d_stress  = false
+use_integral_bl = false
+C_bartz         = 0.026

@@ -1,202 +1,62 @@
 """
 main.py
-Top-level entry point. Edit the EngineConfig below to define your engine,
-then run:  python main.py
+Top-level entry point.
+
+Usage:
+    python main.py                                 # default config
+    python main.py configs/launcher_e1.toml       # any TOML in configs/
+
+Add new engines as TOML files in configs/ — see config_loader.py for the
+schema. The default config (configs/the5k_2p5kn_cucrzr.toml) is the 2.5 kN
+RP-1/LOX CuCrZr build that matches RPA CuCrZr_2.5kNEnging.txt.
 """
+
+import sys
+from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
 
-from config import EngineConfig
 from cea_interface import get_cea_for_analysis
-from geometry import (size_engine, plot_contour, nozzle_radius,
+from geometry import (size_engine, plot_contour,
                       export_csv, export_dxf, _segment_breakpoints)
 from flow_solver import solve_flow
-from heat_transfer import ChannelGeometry, solve_thermal, plot_thermal
+from heat_transfer import solve_thermal, plot_thermal
 from film_cooling import compute_film_taw
 from cea_lookup import build_of_lut
+from channel_builder import build_channel_geometry, report_channels
+from config_loader import load_config
 from dataclasses import replace
 
 
-# =============================================================================
-# ENGINE CONFIG — edit this section
-# =============================================================================
-config = EngineConfig(
-    # Propellants
-    fuel        = "RP-1",
-    oxidizer    = "LOX",
-    coolant     = "RP1",
-
-    # Performance — matches RPA CuCrZr_2.5kNEnging.txt
-    P_c   = 20.0e5,             # 20 bar
-    F_vac = 3074.0,             # 2.5 kN SL (3.074 kN vac)
-
-    # O/F
-    OF        = 2.0,
-    OF_sweep  = None,
-
-    # CEA
-    frozen = False,
-
-    # Geometry — matches RPA
-    exp_ratio   = 6.0,          # Ae/At (RPA)
-    cont_ratio  = 8.0,          # Ac/At (RPA)
-    L_star      = 1.27,         # 1270 mm (RPA)
-
-    # Nozzle contour
-    theta1  = 30.0,
-    thetaD  = 30.0,
-    thetaE  = 12.0,
-    R_chamber_mult     = 1.5,
-    R_throat_conv_mult = 1.5,
-    R_throat_div_mult  = 0.382,
-
-    # Wall material — Copper (CuCrZr) — operational limit, not melting
-    wall_k         = 300.0,     # [W/m·K]
-    wall_roughness = 6.3e-5,    # SLM
-    wall_melt_T    = 1073.0,    # [K] CuCrZr strength limit (800°C, Waugh 2021)
-
-    # Coolant inlet (counter-current from nozzle exit)
-    T_coolant_inlet = 298.0,    # [K]
-    P_coolant_inlet = 35.0e5,   # 35 bar [Pa]
-    mdot_coolant    = None,
-
-    # Channels — bifurcating: 53 at throat, 106 in chamber (RPA)
-    N_channels             = 53,
-    N_channels_throat      = 53,
-    N_channels_chamber     = 106,
-    channel_split_r_ratio  = 2.0,
-    channel_split_transition = 10e-3,
-    dx                     = 1e-3,
-
-    # Tapered channel height — matches RPA 3-section design
-    chan_h_throat  = 1.1e-3,    # Sec2 throat
-    chan_h_chamber = 1.3e-3,    # Sec1 chamber
-    chan_h_exit    = 1.5e-3,    # Sec3 exit
-
-    # Film cooling — 5% (matches RPA film slot at injector face)
-    film_fraction  = 0.0,
-    film_inject_x  = 0.0,
-    film_coolant   = "RP1",
-    film_T_inlet   = 298.0,
-    film_Kt        = 0.0013,
-    film_model     = "simon",
-
-    wall_2d=True,
-    wall_2d_stress=False,
-    wall_material="CuCrZr",
-    T_ref_stress=293.0,
-    use_integral_bl=False,
-    C_bartz=0.026,
-)
+DEFAULT_CONFIG = Path(__file__).parent / "configs" / "the5k_2p5kn_cucrzr.toml"
 
 
-# =============================================================================
-# LAUNCHER E1-LOXCOOL725 — LOX regen-cooled copper RP-1/LOX engine
-#   Thrust: 530 kgf (5.2 kN vac)  Pc: 46 bar  OF: 2.2  No film cooling
-#   3D printed copper (EOS M290), LOX as regen coolant
-#   Geometry estimated — similar thrust class to 2.5 kN engine
-# =============================================================================
-# config = EngineConfig(
-#     fuel="RP-1", oxidizer="LOX", coolant="Oxygen",
-#     P_c=46.0e5,
-#     F_vac=5200.0,
-#     OF=2.2,
-#     exp_ratio=6.0,
-#     cont_ratio=8.0,
-#     L_star=1.0,
-#     theta1=30.0, thetaD=30.0, thetaE=12.0,
-#     R_chamber_mult=1.5, R_throat_conv_mult=1.5, R_throat_div_mult=0.382,
-#     wall_k=300.0, wall_roughness=1.0e-5, wall_melt_T=1073.0,
-#     T_coolant_inlet=90.0,       # LOX subcooled liquid
-#     P_coolant_inlet=80.0e5,     # Above Pc + margin for ΔP headroom
-#     mdot_coolant=None,          # → auto from mdot_ox (see run())
-#     N_channels=34,
-#     dx=1e-3,
-#     chan_h_throat=2.0e-3, chan_h_chamber=3.0e-3, chan_h_exit=3.0e-3,
-#     film_fraction=0.0,
-#     wall_2d=True, wall_2d_stress=False,
-#     wall_material="CuCrZr", T_ref_stress=293.0,
-#     use_integral_bl=False, C_bartz=0.026,
-# )
+def _resolve_config_path(argv: list[str]) -> Path:
+    """Pick a config file: CLI arg if given, else DEFAULT_CONFIG."""
+    if len(argv) > 1:
+        p = Path(argv[1])
+        if not p.exists():
+            raise FileNotFoundError(f"Config file not found: {p}")
+        return p
+    return DEFAULT_CONFIG
 
 
-# =============================================================================
-# RS25 ENGINE CONFIG — Same config as MixtureOptimazation.py Output aligns relatively with Betti/Wang/CryoRocket.com
-# =============================================================================
-# config = EngineConfig(
-#     fuel="LH2", oxidizer="LOX", coolant="Hydrogen",
-#     P_c=18.23E6,
-#     F_vac=2184076.8131,        # N (100% RPL)
-#     OF=6.0,
-#     exp_ratio=69.5,
-#     cont_ratio=2.699,       # A_c/A_t = (R_c/R_t)^2 = (8.9416/5.4416)^2
-#     L_star=0.914,           # 36 inches — RS25 LH2/LOX
-#     theta1=25.4167,         # Hardware convergence half-angle [deg]
-#     thetaD=37.0,
-#     thetaE=5.3738,
-#     R_chamber_mult=0.3196,     # hardware, dimensionless (chamber-side arc)
-#     R_throat_conv_mult=0.9469, # R_U/R_t = 5.1527/5.4416
-#     R_throat_div_mult=0.3711,  # R_D/R_t = 2.019/5.4416
-#     wall_k=316.0,           # Copper alloy (NARloy-Z) — matches MixtureOptimization.py
-#     wall_roughness=2.5e-7,  # Milled / electroformed
-#     wall_melt_T=1356.0,     # Cu melting point [K]
-#     T_coolant_inlet=52.0,   # Coolant Inlet [K]
-#     P_coolant_inlet=44.82e6,# Coolant Inlet Pressure [Pa] — 4.482e7 per Wang & Luong
-#     mdot_coolant=14.31,     # [kg/s] STMCC circuit only: 31.54 lb/s per Wang & Luong (1994)
-#                             # RS25 splits total LH2 flow — only ~21% goes through STMCC channels
-#     N_channels=390,
-#     dx=1e-3,                # Step size for 1-D analysis [m]
-#     wall_2d=True,           # 2-D wall conduction (Betti quasi-2D method)
-# )
-
-# =============================================================================
-# BETTI FPL VALIDATION — Betti, Pizzarelli & Nasuti (J. Prop. Power, 2014)
-# SSME MCC at FPL (109% rated thrust), standard throat, ε=5
-# =============================================================================
-# config = EngineConfig(
-#     fuel="LH2", oxidizer="LOX", coolant="Hydrogen",
-#     P_c=22.587e6,               # 225.87 bar — FPL chamber pressure
-#     F_vac=2015429.0,            # [N] — calibrated for D_t=261.75mm
-#     OF=6.0,
-#     exp_ratio=5.0,              # MCC only (not full nozzle)
-#     cont_ratio=3.0,             # Betti Sec III
-#     L_star=0.914,               # 36 inches
-#     theta1=25.4167,
-#     thetaD=37.0,
-#     thetaE=10.0,                # Wider exit angle for short MCC nozzle
-#     R_chamber_mult=0.3196,
-#     R_throat_conv_mult=0.9469,
-#     R_throat_div_mult=0.3711,
-#     wall_k=316.0,               # NARloy-Z at 533 K
-#     wall_roughness=2.3e-7,      # 0.23 μm — Betti "rough" case
-#     wall_melt_T=1356.0,
-#     T_coolant_inlet=53.89,      # Betti Sec III
-#     P_coolant_inlet=44.547e6,   # 445.47 bar — Betti Sec III
-#     mdot_coolant=14.306,        # Betti Sec III
-#     N_channels=390,
-#     dx=1e-3,
-#     wall_2d=True,
-#     use_integral_bl=True,
-#     C_bartz=0.023,          # Thick BL calibration (Bartz 1965 Fig 10)
-# )
+config = load_config(_resolve_config_path(sys.argv))
+print(f"Loaded engine config: {_resolve_config_path(sys.argv)}")
 
 
-# =============================================================================
-# END CONFIG
-# =============================================================================
-
-
-def run():
+def run(plot=True):
     # --- Step 1: CEA ---
     cea_result = get_cea_for_analysis(config)
     if cea_result is None:
         # Only a sweep was requested — plots shown, nothing further to do
-        return
+        return None
 
     # --- Step 2: Engine geometry ---
     geom = size_engine(config, cea_result)
-    plot_contour(geom, dx=5e-4)
+    if plot:
+        plot_contour(geom, dx=5e-4)
 
     # Derive coolant mass flow if not set
     if config.mdot_coolant is None:
@@ -210,144 +70,15 @@ def run():
                   f"{config.mdot_coolant:.4f} kg/s  "
                   f"(film = {config.film_fraction*100:.0f}%)")
 
-    # Define Cooling Channel Geometry
-    x_j = np.arange(0, geom.L_c + geom.L_nozzle, config.dx) # Create slices at each dx
-    CHAN_W = 1.0e-3  # Constant channel width [m] — matches RPA throat (Sec2)
-    chan_t = np.full(shape=(len(x_j),), fill_value=1.0e-3) # 1.0mm wall thickness (SLM shop min)
-    chan_w = np.full(shape=(len(x_j),), fill_value=CHAN_W)  # 1.5mm constant width
-    chan_land = np.zeros(len(x_j)) # land = circ/N - width (computed below)
-    chan_h = np.zeros(len(x_j))
-    n_chan_per_station = np.zeros(len(x_j), dtype=int)
+    # Build the cooling channel geometry from config.channels (delegated to
+    # channel_builder so validation scripts use the identical code path).
+    chan_geom, info = build_channel_geometry(config, geom)
+    report_channels(chan_geom, info, geom)
 
-    # Bifurcation setup: throat-region channel count, splitting to chamber count
-    # wherever the local wall radius exceeds split_r_ratio · R_t
-    N_throat  = config.N_channels_throat  or config.N_channels
-    N_chamber = config.N_channels_chamber or N_throat
-    split_r   = config.channel_split_r_ratio * geom.R_t
-    x_throat  = geom.L_c   # throat axial location
-
-    # Find the two axial locations where r(x) = split_r — one upstream of the
-    # throat (chamber → throat) and one downstream (throat → exit).  Across a
-    # configurable transition band the channel count is ramped linearly to
-    # mimic a real Y-cusp split rather than an instantaneous jump.
-    r_arr_for_split = np.array([nozzle_radius(x, geom, config.dx) for x in x_j])
-    split_above = r_arr_for_split > split_r
-    x_split_up   = None
-    x_split_down = None
-    for i in range(1, len(x_j)):
-        if split_above[i] != split_above[i - 1]:
-            # linear interp for crossing position
-            r0, r1 = r_arr_for_split[i - 1], r_arr_for_split[i]
-            frac = (split_r - r0) / (r1 - r0) if r1 != r0 else 0.0
-            x_cross = x_j[i - 1] + frac * (x_j[i] - x_j[i - 1])
-            if x_cross < x_throat and x_split_up is None:
-                x_split_up = x_cross
-            # Nozzle side intentionally left unsplit — keep N_throat channels
-            # all the way from the throat to the exit (simpler SLM geometry,
-            # no Y-merge in the diverging section).
-
-    half_trans = 0.5 * config.channel_split_transition
-
-    def n_local_at(x: float) -> float:
-        """Effective (possibly non-integer) channel count at axial station x.
-        Equals N_throat between the two crossings, N_chamber outside, and
-        ramps linearly across a band of width channel_split_transition
-        centered on each crossing."""
-        if x_split_up is not None and x < x_split_up - half_trans:
-            return float(N_chamber)
-        if x_split_up is not None and x < x_split_up + half_trans:
-            f = (x - (x_split_up - half_trans)) / max(2.0 * half_trans, 1e-12)
-            return float(N_chamber + (N_throat - N_chamber) * f)
-        if x_split_down is None or x < x_split_down - half_trans:
-            return float(N_throat)
-        if x < x_split_down + half_trans:
-            f = (x - (x_split_down - half_trans)) / max(2.0 * half_trans, 1e-12)
-            return float(N_throat + (N_chamber - N_throat) * f)
-        return float(N_chamber)
-
-    # Tapered channel height (linear interp chamber → throat → exit).
-    # Falls back to a constant 2 mm if any taper value is unset.
-    if (config.chan_h_throat is not None
-            and config.chan_h_chamber is not None
-            and config.chan_h_exit is not None):
-        x_taper = np.array([0.0, x_throat, geom.L_c + geom.L_nozzle])
-        h_taper = np.array([config.chan_h_chamber,
-                            config.chan_h_throat,
-                            config.chan_h_exit])
-        chan_h[:] = np.interp(x_j, x_taper, h_taper)
-    else:
-        chan_h[:] = 2e-3
-
-    # Calculate land at each slice: land = pitch - width
-    n_chan_float = np.zeros(len(x_j))
-    for i, x in enumerate(x_j):
-        r = nozzle_radius(x, geom, config.dx)
-        N_local = n_local_at(x)
-        n_chan_float[i] = N_local
-        n_chan_per_station[i] = int(round(N_local))
-        circ = 2*np.pi*r
-        chan_land[i] = circ/N_local - CHAN_W
-
-    # Report bifurcation
-    if N_chamber != N_throat:
-        print(f"\n--- Bifurcating channels ---")
-        print(f"  N_throat  = {N_throat}, N_chamber = {N_chamber}")
-        print(f"  Split radius = {split_r*1000:.2f} mm  (= {config.channel_split_r_ratio:.2f} · R_t)")
-        if x_split_up is not None:
-            print(f"  Upstream split   x ≈ {x_split_up*1000:.1f} mm")
-        if x_split_down is not None:
-            print(f"  Downstream split x ≈ {x_split_down*1000:.1f} mm")
-        print(f"  Y-cusp transition length: {config.channel_split_transition*1000:.1f} mm")
-        print(f"  Channel width range:  {chan_w.min()*1000:.3f} – {chan_w.max()*1000:.3f} mm")
-        print(f"  Channel height range: {chan_h.min()*1000:.3f} – {chan_h.max()*1000:.3f} mm")
-
-    # ------------------------------------------------------------------
-    # Segment summary for RPA entry — dimensions at each transition point
-    # ------------------------------------------------------------------
-    def _dims_at(x: float):
-        """Return (N, w, h, land, t, r) at axial station x [m]."""
-        N = n_local_at(x)
-        r = nozzle_radius(x, geom, config.dx)
-        h = float(np.interp(x, x_j, chan_h))
-        ld = float(np.interp(x, x_j, chan_land))
-        t  = float(np.interp(x, x_j, chan_t))
-        w = (2.0 * np.pi * r / N) - ld
-        return N, w, h, ld, t, r
-
-    # Build segment boundary list
-    L_total = geom.L_c + geom.L_nozzle
-    boundaries = [("Injector face", 0.0)]
-    if x_split_up is not None:
-        boundaries.append(("Upstream split START", x_split_up - half_trans))
-        boundaries.append(("Upstream split END",   x_split_up + half_trans))
-    boundaries.append(("Throat", x_throat))
-    if x_split_down is not None:
-        boundaries.append(("Downstream split START", x_split_down - half_trans))
-        boundaries.append(("Downstream split END",   x_split_down + half_trans))
-    boundaries.append(("Nozzle exit", L_total))
-    # Filter out any boundaries that fall outside the engine
-    boundaries = [(lbl, max(0.0, min(x, L_total))) for lbl, x in boundaries]
-
-    print(f"\n--- Segment dimensions for RPA entry ---")
-    print(f"  {'Station':<26} {'x[mm]':>7} {'r[mm]':>7} {'N':>6} "
-          f"{'w[mm]':>7} {'h[mm]':>7} {'land[mm]':>9} {'t_w[mm]':>8}")
-    print("  " + "-"*82)
-    for lbl, x in boundaries:
-        N, w, h, ld, t, r = _dims_at(x)
-        print(f"  {lbl:<26} {x*1000:7.1f} {r*1000:7.2f} {N:6.1f} "
-              f"{w*1000:7.3f} {h*1000:7.3f} {ld*1000:9.3f} {t*1000:8.3f}")
-    print()
-    print(f"  Wall thickness (chan_t): {chan_t.min()*1000:.3f} mm (constant)")
-    print(f"  Engine total length: {L_total*1000:.1f} mm  "
-          f"(L_c={geom.L_c*1000:.1f} mm, L_nozzle={geom.L_nozzle*1000:.1f} mm)")
-   
-    
-    # Display channel geometry just like in RPA
-    # for i, x in enumerate(x_j):
-    #     print(f"x: {x:.4f} [m] hc: {chan_h[i]*1000:.4f} [mm] a: {chan_w[i]*1000:.4f} b: {chan_land[i]*1000:.4f} [mm]")
- 
-    chan_geom = ChannelGeometry(x_j, chan_w, chan_h, chan_t, chan_land,
-                                n_chan=n_chan_float)
+    N_throat     = info["N_throat"]
+    x_split_up   = info["x_split_up"]
+    x_split_down = info["x_split_down"]
+    half_trans   = info["half_trans"]
 
     # --- Export geometry for OnShape (throat-centered, x=0 at throat) ---
     # Build key station list for channel_dimensions.csv
@@ -488,10 +219,19 @@ def run():
                                     cea_per_station=cea_per_station,
                                     phase_code=phase_code)
 
-    plot_thermal(thermal, geom, config)
+    if plot:
+        plot_thermal(thermal, geom, config)
 
-    plt.show()  # Keep all plot windows open
+    return {
+        "config":    config,
+        "cea":       cea_result,
+        "geom":      geom,
+        "chan_geom": chan_geom,
+        "flow":      flow,
+        "thermal":   thermal,
+    }
 
 
 if __name__ == "__main__":
     run()
+    plt.show()  # Keep all plot windows open

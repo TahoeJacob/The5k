@@ -1,0 +1,57 @@
+# RS25 — LH2/LOX, 100% RPL, NARloy-Z. Calibrated against MixtureOptimization.py
+# and aligned with Betti / Wang & Luong / cryorocket.com.
+
+[propellants]
+fuel     = "LH2"
+oxidizer = "LOX"
+coolant  = "Hydrogen"
+
+[performance]
+P_c    = 1.823e7        # 182.3 bar
+F_vac  = 2184076.8131   # [N] — 100% RPL
+OF     = 6.0
+frozen = false
+
+[geometry]
+exp_ratio          = 69.5
+cont_ratio         = 2.699       # (R_c/R_t)^2 = (8.9416/5.4416)^2
+L_star             = 0.914       # 36 in
+theta1             = 25.4167     # hardware convergence half-angle
+thetaD             = 37.0
+thetaE             = 5.3738
+R_chamber_mult     = 0.3196      # hardware (chamber-side arc)
+R_throat_conv_mult = 0.9469      # R_U/R_t = 5.1527/5.4416
+R_throat_div_mult  = 0.3711      # R_D/R_t = 2.019/5.4416
+
+[wall]
+material     = "CuCrZr"          # NARloy-Z material model not in MATERIALS — placeholder
+k            = 316.0             # Copper alloy (NARloy-Z)
+roughness    = 2.5e-7            # Milled / electroformed
+melt_T       = 1356.0            # Cu melting point [K]
+T_ref_stress = 293.0
+
+[coolant]
+T_inlet = 52.0
+P_inlet = 4.482e7                # 4.482e7 Pa per Wang & Luong
+mdot    = 14.31                  # STMCC circuit only (~21% of total LH2 flow)
+
+[channels]
+# RS25 channels are not bifurcating (n_throat == n_chamber). Height defaults
+# to 2 mm (matches the historical fallback when chan_h_* were unset).
+n_throat         = 390
+n_chamber        = 390
+split_r_ratio    = 2.0
+split_transition = 10e-3
+dx               = 1e-3
+height_taper = [["chamber", 2.0e-3], ["throat", 2.0e-3], ["exit", 2.0e-3]]
+width_taper  = [["chamber", 1.0e-3], ["throat", 1.0e-3], ["exit", 1.0e-3]]
+wall_t_taper = [["chamber", 1.0e-3], ["throat", 1.0e-3], ["exit", 1.0e-3]]
+
+[film]
+fraction = 0.0
+
+[solver]
+wall_2d         = true            # 2-D wall conduction (Betti quasi-2D)
+wall_2d_stress  = false
+use_integral_bl = false
+C_bartz         = 0.026

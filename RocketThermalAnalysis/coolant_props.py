@@ -20,8 +20,8 @@ import CoolProp.CoolProp as CP
 # -----------------------------------------------------------------------
 # REFPROP installation paths — edit these
 # -----------------------------------------------------------------------
-REFPROP_PATH = '/home/jacob/Documents/REFPROP/'
-REFPROP_LIB  = '/home/jacob/Documents/REFPROP-cmake/build/librefprop.so'
+REFPROP_PATH = '/Users/jacobsaunders/Documents/CoolTheEngine/REFPROP/'
+REFPROP_LIB  = '/Users/jacobsaunders/Documents/CoolTheEngine/REFPROP-cmake/build/librefprop.dylib'
 
 # Huber et al. (2010) RP-1 surrogate: MDEC + 5MC9 + n-C12 + MCH
 _RP1_FLUID    = "MDEC.FLD&5MC9.FLD&C12.FLD&C7CC6.FLD"

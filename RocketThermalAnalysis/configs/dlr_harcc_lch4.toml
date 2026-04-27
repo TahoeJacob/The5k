@@ -1,0 +1,68 @@
+# DLR HARCC subscale — LCH4-cooled LOX/CH4 test case (Sector S1, AR 1.7)
+# Source: same as dlr_harcc_lh2.toml — Haemisch, Suslov, Oschwald 2019.
+# See dlr_harcc_lh2.toml for the full caveat about HARCC being a 200 mm
+# cylindrical chamber segment, NOT a complete engine.
+#
+# What's REPORTED in the paper for the methane test case:
+#   - P_c = 50.2 bar, OF = 2.0, F = 17.8 kN
+#   - mdot_INJ = 1.85 kg/s, mdot_HARCC = 1.74 kg/s
+#   - Coolant T_in (S1) = 138.6 K, P_out (S1) = 78.1 bar
+#   - mdot per channel (S1) = 20.1 g/s
+#   - Wall material, roughness, channel geometry — same as LH2 case
+#   - Calorimetric q_w on S1 = 14.5 MW/m² (mean)
+#   - Inverse-method q_w(x): 13.7 (in) → 14.7 (out) MW/m²
+#   - Hot-gas T_w (S1, methane): up to ~700 K (fig 9a)
+
+[propellants]
+fuel     = "CH4"
+oxidizer = "LOX"
+coolant  = "Methane"
+
+[performance]
+P_c    = 5.02e6            # REPORTED — 50.2 bar
+F_vac  = 17800.0           # REPORTED — 17.8 kN
+OF     = 2.0               # REPORTED
+frozen = false
+
+[geometry]
+exp_ratio          = 4.0   # ASSUMED — HARCC has no nozzle; pick a small ε
+cont_ratio         = 2.6   # ASSUMED to make D_c land near 80 mm
+L_star             = 0.5   # ASSUMED — short cylinder (HARCC is 200 mm)
+theta1             = 30.0
+thetaD             = 30.0
+thetaE             = 10.0
+R_chamber_mult     = 1.5
+R_throat_conv_mult = 1.5
+R_throat_div_mult  = 0.382
+
+[wall]
+material     = "CuCrZr"
+k            = 350.0       # REPORTED
+roughness    = 1.1e-6      # REPORTED — k_s = 1.1 µm
+melt_T       = 900.0       # ASSUMED
+T_ref_stress = 293.0
+
+[coolant]
+T_inlet = 138.6            # REPORTED — S1 T_in = 138.6 K
+P_inlet = 7.81e6           # REPORTED — S1 P_out = 78.1 bar
+mdot    = 0.5025           # = 20.1 g/s × 25 channels = 0.5025 kg/s (S1 only)
+
+[channels]
+# Sector S1: same geometry as LH2 case (h=2.0, w=1.2, 100 channels)
+n_throat         = 100
+n_chamber        = 100
+split_r_ratio    = 2.0
+split_transition = 10e-3
+dx               = 1e-3
+height_taper = [["chamber", 2.0e-3], ["throat", 2.0e-3], ["exit", 2.0e-3]]
+width_taper  = [["chamber", 1.2e-3], ["throat", 1.2e-3], ["exit", 1.2e-3]]
+wall_t_taper = [["chamber", 1.0e-3], ["throat", 1.0e-3], ["exit", 1.0e-3]]
+
+[film]
+fraction = 0.0
+
+[solver]
+wall_2d         = true
+wall_2d_stress  = false
+use_integral_bl = false
+C_bartz         = 0.026

@@ -1,0 +1,57 @@
+# Launcher E1-LOXCOOL725 — RP-1/LOX, 5.2 kN vac, LOX regen-cooled CuCrZr
+#   Thrust: 530 kgf (5.2 kN vac)  P_c: 46 bar  OF: 2.2  No film cooling
+#   3D printed copper (EOS M290), LOX as regen coolant.
+#   Geometry estimated — similar thrust class to the 2.5 kN engine.
+
+[propellants]
+fuel     = "RP-1"
+oxidizer = "LOX"
+coolant  = "Oxygen"
+
+[performance]
+P_c    = 4.6e6      # 46 bar
+F_vac  = 5200.0
+OF     = 2.2
+frozen = false
+
+[geometry]
+exp_ratio          = 6.0
+cont_ratio         = 8.0
+L_star             = 1.0
+theta1             = 30.0
+thetaD             = 30.0
+thetaE             = 12.0
+R_chamber_mult     = 1.5
+R_throat_conv_mult = 1.5
+R_throat_div_mult  = 0.382
+
+[wall]
+material     = "CuCrZr"
+k            = 300.0
+roughness    = 1.0e-5
+melt_T       = 1073.0
+T_ref_stress = 293.0
+
+[coolant]
+T_inlet = 90.0           # LOX subcooled liquid
+P_inlet = 8.0e6          # 80 bar — above P_c + ΔP headroom
+mdot    = "auto"         # → mdot_ox (LOX regen path)
+
+[channels]
+n_throat         = 34
+n_chamber        = 34
+split_r_ratio    = 2.0
+split_transition = 10e-3
+dx               = 1e-3
+height_taper = [["chamber", 3.0e-3], ["throat", 2.0e-3], ["exit", 3.0e-3]]
+width_taper  = [["chamber", 1.0e-3], ["throat", 1.0e-3], ["exit", 1.0e-3]]
+wall_t_taper = [["chamber", 1.0e-3], ["throat", 1.0e-3], ["exit", 1.0e-3]]
+
+[film]
+fraction = 0.0
+
+[solver]
+wall_2d         = true
+wall_2d_stress  = false
+use_integral_bl = false
+C_bartz         = 0.026

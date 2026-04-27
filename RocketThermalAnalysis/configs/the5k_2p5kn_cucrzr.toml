@@ -1,0 +1,63 @@
+# The 5k — 2.5 kN RP-1/LOX, CuCrZr regen-cooled, no film
+# Mirrors RPA CuCrZr_2.5kNEnging.txt geometry. Operational T limit (800 °C
+# CuCrZr strength), not melting point.
+
+[propellants]
+fuel     = "RP-1"
+oxidizer = "LOX"
+coolant  = "RP1"
+
+[performance]
+P_c    = 2.0e6      # 20 bar
+F_vac  = 3074.0     # 2.5 kN SL → 3.074 kN vac
+OF     = 2.0
+frozen = false      # equilibrium CEA
+
+[geometry]
+exp_ratio          = 6.0     # Ae/At
+cont_ratio         = 8.0     # Ac/At
+L_star             = 1.27    # 1270 mm
+theta1             = 30.0
+thetaD             = 30.0
+thetaE             = 12.0
+R_chamber_mult     = 1.5
+R_throat_conv_mult = 1.5
+R_throat_div_mult  = 0.382
+
+[wall]
+material     = "CuCrZr"
+k            = 300.0       # [W/m·K]
+roughness    = 6.3e-5      # SLM 3D-print
+melt_T       = 1073.0      # [K] CuCrZr 800 °C strength limit (Waugh 2021)
+T_ref_stress = 293.0
+
+[coolant]
+T_inlet = 298.0
+P_inlet = 3.5e6      # 35 bar
+mdot    = "auto"     # → mdot_fuel × (1 - film_fraction)
+
+[channels]
+# RPA 3-section bifurcating: 53 at throat, 106 in chamber. 1 mm constant
+# width, 1 mm constant hot-wall thickness, height tapered chamber→throat→exit.
+n_throat         = 53
+n_chamber        = 106
+split_r_ratio    = 2.0
+split_transition = 10e-3
+dx               = 1e-3
+height_taper = [["chamber", 1.3e-3], ["throat", 1.1e-3], ["exit", 1.5e-3]]
+width_taper  = [["chamber", 1.0e-3], ["throat", 1.0e-3], ["exit", 1.0e-3]]
+wall_t_taper = [["chamber", 1.0e-3], ["throat", 1.0e-3], ["exit", 1.0e-3]]
+
+[film]
+fraction = 0.0
+inject_x = 0.0
+coolant  = "RP1"
+T_inlet  = 298.0
+Kt       = 0.0013
+model    = "simon"
+
+[solver]
+wall_2d         = false
+wall_2d_stress  = false
+use_integral_bl = false
+C_bartz         = 0.026

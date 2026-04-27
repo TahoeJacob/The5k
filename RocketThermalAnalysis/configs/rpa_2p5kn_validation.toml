@@ -1,0 +1,66 @@
+# Match RPA exactly for the 2.5 kN RP-1/LOX validation case
+#   F_vac = 2.971 kN  P_c = 20 bar  OF = 2.0
+#   D_c = 84.3 mm  D_t = 34.42 mm  L_cyl = 123.05 mm  L_c = 194.65 mm  L_e = 64.20 mm
+#   Ae/At = 5.0  Ac/At = 6.0  L* = 1000 mm
+#   Wall: Inconel, k = 16 W/(m·K), t = 0.9 mm
+#   Channels: 1.5 mm × 1.5 mm constant; N = 60 chamber, N = 30 throat
+#   Coolant inlet: 298 K at nozzle exit, P = 3.5 MPa
+
+[propellants]
+fuel     = "RP-1"
+oxidizer = "LOX"
+coolant  = "RP1"
+
+[performance]
+P_c    = 2.0e6
+F_vac  = 2971.0       # RPA: 2.9710 kN vacuum
+OF     = 2.0
+frozen = false
+
+[geometry]
+exp_ratio          = 5.0
+cont_ratio         = 6.0
+L_star             = 1.0       # 1000 mm
+theta1             = 30.0
+thetaD             = 30.0
+thetaE             = 12.0
+R_chamber_mult     = 1.5
+R_throat_conv_mult = 1.5
+R_throat_div_mult  = 0.382
+
+[wall]
+material     = "Inconel718"
+k            = 16.0           # Inconel
+roughness    = 12.0e-6
+melt_T       = 1100.0
+T_ref_stress = 293.0
+
+[coolant]
+T_inlet = 298.0
+P_inlet = 3.5e6               # 35 bar
+mdot    = "auto"
+
+[channels]
+# RPA: bifurcating 30 throat → 60 chamber, constant 1.5 mm × 1.5 mm × 0.9 mm wall.
+n_throat         = 30
+n_chamber        = 60
+split_r_ratio    = 2.0
+split_transition = 10e-3
+dx               = 1e-3
+height_taper = [["chamber", 1.5e-3], ["throat", 1.5e-3], ["exit", 1.5e-3]]
+width_taper  = [["chamber", 1.5e-3], ["throat", 1.5e-3], ["exit", 1.5e-3]]
+wall_t_taper = [["chamber", 0.9e-3], ["throat", 0.9e-3], ["exit", 0.9e-3]]
+
+[film]
+fraction = 0.0          # script overrides per-call
+inject_x = 0.0
+coolant  = "RP1"
+T_inlet  = 298.0
+Kt       = 0.0013
+model    = "simon"
+
+[solver]
+wall_2d         = true
+wall_2d_stress  = false
+use_integral_bl = false
+C_bartz         = 0.026

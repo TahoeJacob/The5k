@@ -1,0 +1,136 @@
+# DLR LUMEN — 25 kN class LOX/LCH4 regen-cooled CuCrZr, NEB cycle
+# Sources (both in References/):
+#   [1] Haemisch, Suslov, Waxenegger-Wilfing, Dresia, Oschwald (2021)
+#       "LUMEN — Design of the Regenerative Cooling System for an Expander
+#        Bleed Cycle Engine Using Methane", SP2020_00068.
+#       References/210217_SP_Haemisch_final.pdf
+#   [2] Dresia, Kurudzija, Deeken, Waxenegger-Wilfing (2023)
+#       "Improved Wall Temperature Prediction for the LUMEN Rocket Combustion
+#        Chamber with Neural Networks", MDPI Aerospace 10:450.
+#       https://doi.org/10.3390/aerospace10050450
+#       References/aerospace-10-00450-v3.pdf
+#
+# All channel-level parameters are now REPORTED (from these papers) — no
+# more assumptions. Engine envelope (D_t, L_c, L_n) is still approximate
+# because our solver builds the contour from F+P_c+CEA, not from a CAD
+# import. Differences are documented inline.
+#
+# REPORTED values (paper [1] tables 1–4, paper [2] §4.3):
+#   - 25 kN thrust class
+#   - P_c nominal = 60 bar (35–80 bar throttle range)
+#   - OF nominal = 3.4 (3.0–3.8 range)
+#   - LOX mdot = 5.946 kg/s, LNG mdot = 1.749 kg/s (project overview)
+#   - Cylindrical chamber D_c = 80 mm
+#   - Contraction ratio ε_c = 2.3
+#   - Cylindrical-part length (between h2 and h3) L = 247.2 mm
+#   - Wall material: CuCrZr (99.25% Cu, 0.62% Cr, 0.1% Zr) [2 §3]
+#   - Coolant: methane (CH4 / LNG), counter-flow in MCC, co-flow in extension
+#   - Coolant T_in = 120 K  (paper [1] table 3, paper [2] §4.3)
+#   - Coolant P_out = 80 bar (paper [2] §4.3 nominal — paper [1] used 68.4)
+#   - Coolant mdot = 2.6 kg/s (paper [2] §4.3 nominal — paper [1] used 2.35)
+#   - n_channels = 86 [1, table 4]
+#   - Channel width = 1.0 mm constant [1, text + 2 §4.3]
+#   - Hot-wall thickness = 1.0 mm [1 table 2 + 2 §4.3]
+#   - Surface roughness k_s = 5 µm [1 table 3 + 2 §4.3]
+#   - Channel height at 5 control points (paper [1] table 4):
+#       h1 (injector face)              = 8.2 mm
+#       h2 (start of decreasing q zone) = 4.0 mm
+#       h3 (end of decreasing q zone)   = 4.0 mm
+#       h4 (throat)                     = 1.8 mm
+#       h5 (end of cooled chamber)      = 4.1 mm
+#   - Maximum heat flux (target/CFD): q_max = 51 MW/m² [2 §4.3]
+#   - Design ΔP_channel = 23.7 bar; T_out (coolant) = 408.6 K [1 table 5]
+#   - Peak wall T from CFD: T_w(h2) = 874 K, T_w(h4) = 879 K [1 table 5]
+#
+# What's still APPROXIMATE in our config (envelope, not channels):
+#   - F_vac = 25 kN (paper says "25 kN thrust class"; mdot×Isp gives ~22 kN
+#     for the actual 7.7 kg/s total mdot — kept 25 kN to match nominal label)
+#   - exp_ratio = 7 — our solver builds a bell to this ε; chosen so the
+#     resulting L_nozzle (~150 mm) matches the cooled-MCC nozzle extent
+#     (LUMEN nozzle extension is a separate Inconel718 ALM circuit, not
+#     modelled here)
+#   - cont_ratio = 2.3 (REPORTED) — but our derived D_c lands at ~86 mm
+#     vs paper's exact 80 mm because D_t is computed from F+P_c+CEA, not
+#     from D_c. ~7% off. Not fixable without a CAD-import contour mode.
+
+[propellants]
+fuel     = "CH4"
+oxidizer = "LOX"
+coolant  = "Methane"
+
+[performance]
+P_c    = 6.0e6                # 60 bar [REPORTED]
+# Paper says "25 kN thrust class" but mdot×Isp_vac for the actual reported
+# total mdot (LOX 5.946 + LNG 1.749 = 7.695 kg/s) at Isp_vac ≈ 290 s gives
+# F_vac ≈ 22 kN. Using 22 kN here makes our solver-derived D_t = 52.7 mm
+# match paper's D_c=80 / √cont_ratio=√2.3 exactly.
+F_vac  = 22000.0
+OF     = 3.4                  # [REPORTED]
+frozen = false
+
+[geometry]
+exp_ratio          = 7.0      # APPROX — sized so L_nozzle ≈ LUMEN cooled
+                              # extent (~150 mm); LUMEN nozzle extension is
+                              # a separate Inconel718 piece, not modelled
+cont_ratio         = 2.3      # [REPORTED]
+L_star             = 0.9      # derived from paper geometry (Acyl·Lcyl + Aconv·Lconv) / At
+# Paper's convergence (h3 → h4) is 119 mm long. With (R_c-R_t) = 13.6 mm,
+# this implies tan(θ1) = 13.6/119 = 0.114 → θ1 ≈ 6.5° — much gentler than
+# a standard bell. Matching it gives our L_cyl ≈ 307 mm (paper 247.2 mm
+# + 60 mm pre-zone = 307 mm) instead of the 374 mm we got with θ1=30°.
+theta1             = 6.5
+thetaD             = 30.0
+thetaE             = 10.0
+R_chamber_mult     = 1.5
+R_throat_conv_mult = 1.5
+R_throat_div_mult  = 0.382
+
+[wall]
+material     = "CuCrZr"       # [REPORTED — 99.25% Cu / 0.62% Cr / 0.1% Zr]
+k            = 320.0          # CuCrZr at ~500 K (engineering value;
+                              # paper doesn't state a specific k)
+roughness    = 5.0e-6         # k_s = 5 µm [REPORTED]
+melt_T       = 900.0          # T_wall design limit [REPORTED]
+T_ref_stress = 293.0
+
+[coolant]
+# Use paper [1] table 5 design point exactly (mdot=2.35, P_out=68.4 bar)
+# so the validation script can compare to that table's published numbers
+# (T_out=408.6 K, ΔP=23.7 bar). Paper [2] re-ran at 2.6 kg/s for the NN
+# study but didn't publish a comparable T_out/ΔP table.
+T_inlet = 120.0               # [REPORTED]
+P_inlet = 9.21e6              # 92.1 bar = P_out (68.4) + ΔP (23.7) — paper [1] table 5
+mdot    = 2.35                # [REPORTED — paper [1] table 4]
+
+[channels]
+n_throat         = 86          # [REPORTED]
+n_chamber        = 86          # [REPORTED — non-bifurcating]
+split_r_ratio    = 2.0
+split_transition = 10e-3
+dx               = 1e-3
+# 5-point height taper [REPORTED — paper [1] table 4]:
+#   h1 = 8.2 mm at injector face   ("chamber" station)
+#   h2 = 4.0 mm at start of cylinder        (frac 0.10 of L_total — approx;
+#                                            real position is 60mm from h1)
+#   h3 = 4.0 mm at end of cylinder           (frac 0.55 — approx;
+#                                            real position is h2 + 247.2 mm)
+#   h4 = 1.8 mm at throat                    ("throat" station)
+#   h5 = 4.1 mm at end of cooled MCC         ("exit" station)
+height_taper = [
+    ["chamber", 8.2e-3],
+    [0.10,      4.0e-3],
+    [0.55,      4.0e-3],
+    ["throat",  1.8e-3],
+    ["exit",    4.1e-3],
+]
+width_taper  = [["chamber", 1.0e-3], ["throat", 1.0e-3], ["exit", 1.0e-3]]
+wall_t_taper = [["chamber", 1.0e-3], ["throat", 1.0e-3], ["exit", 1.0e-3]]
+
+[film]
+fraction = 0.0
+
+[solver]
+wall_2d         = true
+wall_2d_stress  = false
+use_integral_bl = false
+C_bartz         = 0.026

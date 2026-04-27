@@ -1,0 +1,57 @@
+# Betti FPL — Betti, Pizzarelli & Nasuti (J. Propulsion & Power, 2014)
+# SSME MCC at FPL (109% rated thrust), standard throat, ε = 5.
+# Author's existing thick-BL Bartz calibration (C = 0.023) lives here so the
+# same TOML can be re-run for paper validation against Betti's reported wall T.
+
+[propellants]
+fuel     = "LH2"
+oxidizer = "LOX"
+coolant  = "Hydrogen"
+
+[performance]
+P_c    = 2.2587e7      # 225.87 bar — FPL chamber pressure
+F_vac  = 2015429.0     # [N] — calibrated for D_t = 261.75 mm
+OF     = 6.0
+frozen = false
+
+[geometry]
+exp_ratio          = 5.0           # MCC only (not full nozzle)
+cont_ratio         = 3.0           # Betti Sec III
+L_star             = 0.914         # 36 in
+theta1             = 25.4167
+thetaD             = 37.0
+thetaE             = 10.0          # Wider exit angle for short MCC nozzle
+R_chamber_mult     = 0.3196
+R_throat_conv_mult = 0.9469
+R_throat_div_mult  = 0.3711
+
+[wall]
+material     = "CuCrZr"            # NARloy-Z not in MATERIALS table — placeholder
+k            = 316.0               # NARloy-Z at 533 K
+roughness    = 2.3e-7              # 0.23 µm — Betti "rough" case
+melt_T       = 1356.0
+T_ref_stress = 293.0
+
+[coolant]
+T_inlet = 53.89
+P_inlet = 4.4547e7                 # 445.47 bar — Betti Sec III
+mdot    = 14.306                   # Betti Sec III
+
+[channels]
+n_throat         = 390
+n_chamber        = 390
+split_r_ratio    = 2.0
+split_transition = 10e-3
+dx               = 1e-3
+height_taper = [["chamber", 2.0e-3], ["throat", 2.0e-3], ["exit", 2.0e-3]]
+width_taper  = [["chamber", 1.0e-3], ["throat", 1.0e-3], ["exit", 1.0e-3]]
+wall_t_taper = [["chamber", 1.0e-3], ["throat", 1.0e-3], ["exit", 1.0e-3]]
+
+[film]
+fraction = 0.0
+
+[solver]
+wall_2d         = true
+wall_2d_stress  = false
+use_integral_bl = true             # Bartz 1965 integral-BL method
+C_bartz         = 0.023            # Thick-BL calibration (Bartz 1965 Fig 10)

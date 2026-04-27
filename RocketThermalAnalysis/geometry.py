@@ -5,9 +5,10 @@ Engine sizing and parametric nozzle contour.
 Main entry point: size_engine(config, cea_result) → EngineGeometry
 """
 
+import sys
 import numpy as np
 import matplotlib
-matplotlib.use('TkAgg',force=True)
+matplotlib.use('macosx' if sys.platform == 'darwin' else 'TkAgg', force=True)
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from typing import Optional

@@ -150,6 +150,38 @@ def _colebrook_f(Re: float, Dh: float, roughness: float,
 
 
 # -----------------------------------------------------------------------
+# Internal: wall-side viscosity (Sieder-Tate property correction)
+# -----------------------------------------------------------------------
+# Per-fluid upper bound for evaluating coolant viscosity at the wall.
+# RP-1 thermally cracks above ~600-700 K, so REFPROP can't return a valid
+# property there.  Clip to a safe upper limit; the (mu_b/mu_w)^0.14 factor
+# is gentle enough that the clipping introduces only modest error.
+_T_WALL_MAX = {
+    "RP1":      650.0,    # RP-1 cracking-onset (Edwards 2003)
+    "Methane":  900.0,    # well below CoolProp methane upper limit (1100 K)
+    "Hydrogen": 1500.0,   # CoolProp/REFPROP H2 reaches ~1000-2000 K
+}
+
+
+def _wall_viscosity(T_cw: float, P_cool: float, fluid: str,
+                    mu_b: float) -> float:
+    """Coolant viscosity evaluated at the wall (T_cw, P_cool).
+
+    Falls back to bulk viscosity if the wall-side property call fails or
+    if the wall temperature exceeds the fluid's safe-evaluation range.
+    Returns at least mu_b/10 to keep the (mu_b/mu_w)^0.14 factor bounded.
+    """
+    T_max = _T_WALL_MAX.get(fluid, 1000.0)
+    T_w_eval = min(max(T_cw, 1.0), T_max)
+    try:
+        props_w = get_coolant_props(T_w_eval, P_cool, fluid)
+        mu_w = float(props_w.viscosity)
+    except Exception:
+        return mu_b
+    return max(mu_w, mu_b / 10.0)
+
+
+# -----------------------------------------------------------------------
 # Internal: radius of curvature (Niino C3 correction)
 # -----------------------------------------------------------------------
 def _curvature_at(x: float, geom: EngineGeometry):
@@ -499,17 +531,19 @@ def _coolant_heat(x: float, T_cw: float, T_cool: float, P_cool: float,
 
     # Nusselt number
     if fluid == "RP1":
-        # Ponomarenko / Dobrovolsky kerosene correlation (used by RPA):
-        #   Nu = 0.021 Re^0.8 Pr^0.4 (0.64 + 0.36 T_c/T_wc)
-        # The temperature-ratio factor accounts for large property variation
-        # between the bulk coolant and the hot wall — critical for RP-1 where
-        # T_c << T_wc.  Omitting it (e.g. Gnielinski) over-predicts h_cool by
-        # ~25% and artificially collapses T_hw toward T_coolant.
+        # Sieder-Tate (1936) form with viscosity-ratio property correction:
+        #   Nu = 0.021 Re^0.8 Pr^0.4 (mu_b / mu_w)^0.14
+        # Replaces the Ponomarenko/Dobrovolsky temperature-ratio factor
+        # (0.64 + 0.36·T_c/T_wc) which over-corrects for SLM narrow-channel
+        # cooling: predicts h_cool ~25% lower than NASA NTRS 20040076962
+        # uncertainty band centre, leading to T_hw over-predictions.
+        # Sieder-Tate's mu-ratio is the canonical correction for property
+        # variation across the boundary layer when T_b << T_w.
         if Re < 2300.0:
             Nu = 4.36
         else:
-            T_ratio = T_cool / max(T_cw, T_cool + 1.0)   # clip to avoid div/0
-            Nu = 0.021 * Re**0.8 * Pr**0.4 * (0.64 + 0.36 * T_ratio)
+            mu_w = _wall_viscosity(T_cw, P_cool, fluid, mu_b=visc)
+            Nu = 0.021 * Re**0.8 * Pr**0.4 * (visc / mu_w)**0.14
     elif fluid == "Methane":
         # Ponomarenko methane correlation (RPA):
         #   Nu = 0.0185 Re^0.8 Pr^0.4 (T_c/T_wc)^0.1
@@ -540,7 +574,7 @@ def _coolant_heat(x: float, T_cw: float, T_cool: float, P_cool: float,
         Nu = ((f / 8.0) * Re * Pr * (T_cool / T_cw)**0.55
               / (1.0 + np.sqrt(f / 8.0) * (B - 8.48))) * C1 * C2 * C3
 
-    h_cool = Nu * cond / Dh
+    h_cool = Nu * cond / Dh * config.h_cool_scale
 
     # Rectangular fin efficiency (land between channels, adiabatic tip).
     #
@@ -617,11 +651,12 @@ def _coolant_htc(x: float, T_cw: float, T_cool: float, P_cool: float,
     f  = _colebrook_f(Re, Dh, e)
 
     if fluid == "RP1":
+        # Sieder-Tate viscosity-ratio (see _coolant_helper for rationale)
         if Re < 2300.0:
             Nu = 4.36
         else:
-            T_ratio = T_cool / max(T_cw, T_cool + 1.0)
-            Nu = 0.021 * Re**0.8 * Pr**0.4 * (0.64 + 0.36 * T_ratio)
+            mu_w = _wall_viscosity(T_cw, P_cool, fluid, mu_b=visc)
+            Nu = 0.021 * Re**0.8 * Pr**0.4 * (visc / mu_w)**0.14
     elif fluid == "Methane":
         if Re < 2300.0:
             Nu = 4.36
@@ -646,7 +681,7 @@ def _coolant_htc(x: float, T_cw: float, T_cool: float, P_cool: float,
         Nu = ((f / 8.0) * Re * Pr * (T_cool / T_cw)**0.55
               / (1.0 + np.sqrt(f / 8.0) * (B - 8.48))) * C1 * C2 * C3
 
-    h_cool = Nu * cond / Dh
+    h_cool = Nu * cond / Dh * config.h_cool_scale
     return h_cool, Re, Nu, Dh, v, rho, f, props
 
 
