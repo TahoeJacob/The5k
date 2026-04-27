@@ -92,6 +92,14 @@ class EngineConfig:
 
     wall_2d: bool = False  # True = 2-D wall conduction (Betti method);
                            # False = 1-D flat-plate + fin model
+
+    # -----------------------------------------------------------------------
+    # Thermal-stress post-processing  (generalized plane strain, free axial)
+    # -----------------------------------------------------------------------
+    wall_2d_stress: bool = False       # Run plane-strain thermo-elastic solve
+                                       # on the same unit cell as wall_2d
+    wall_material:  str  = "CuCrZr"    # Key into materials.MATERIALS table
+    T_ref_stress:   float = 293.0      # Stress-free reference temperature [K]
     use_integral_bl: bool = False  # True = Bartz 1965 integral BL method;
                                    # False = simplified Bartz (Eq. 50)
     C_bartz: float = 0.026  # Bartz coefficient: 0.026 = thin BL (default),

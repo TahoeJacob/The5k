@@ -326,7 +326,7 @@ class RocketEngine:
        
         print(f"Pipe Length for O/F ratio of {target_of}: {length[of_array.index(target_of)]} m, Oxidizer Tank Length: {ox_tank_length} m, Fuel Tank Length: {fuel_tank_length} m") 
         # Based off length calculate mass of pipe
-        mass_per_meter = 6  # Mass of steel per meter [kg/m] (from steel and tube)
+        mass_per_meter = 42.5  # Mass of steel per meter [kg/m] (from steel and tube)
         print(f"Pipe Mass for O/F ratio of {target_of}: {round(length[of_array.index(target_of)] * mass_per_meter, 2)} kg")
         print(f'Vacuum Thrust for O/F ratio of {target_of}: {F_vac_array[of_array.index(target_of)]:.2f} N')
         # Calculate column widths for alignment
@@ -539,7 +539,7 @@ class RocketEngine:
         rho = p/(0.2869*(T+273.15))  # Density in kg/m^3
         return rho
 
-    def estimate_altitude(self, of_ratios, target_of, dt = 0.1, recovery_mass = 5, engine_mass = 10, payload_mass = 2, tank_mass_per_meter = 6):
+    def estimate_altitude(self, of_ratios, target_of, dt = 0.1, recovery_mass = 5, engine_mass = 10, payload_mass = 2, tank_mass_per_meter =42.5):
         # Function to calculate altitute rocket will get reach
         # Inputs:
         # of_ratios: List of O/F ratios to display data for
@@ -586,6 +586,7 @@ class RocketEngine:
         total_ox_mass = ox_masses[of_array.index(target_of)]  # Total oxidizer mass in kg
         total_fuel_mass = fuel_masses[of_array.index(target_of)]  # Total fuel mass in kg
         tank_length = tank_lengths[of_array.index(target_of)]  # Length of tank [m]
+        print(tank_length, tank_mass_per_meter)
         tank_mass = (tank_length * tank_mass_per_meter)+2  # Mass of the tank plus some extra mass for the tank structure (end caps, welds, internal pipes) [kg]
         ox_mdot = ox_mdot_array[of_array.index(target_of)]  # Oxidizer mass flow rate in kg/s for target O/F ratio
         fuel_mdot = fuel_mdot_array[of_array.index(target_of)]  # Fuel mass flow rate in kg/s for target O/F ratio
@@ -594,7 +595,7 @@ class RocketEngine:
         
         # Setup time array
         times = np.arange(0, self.burn_time, dt)
-        A = np.pi * (0.152 / 2) ** 2  # Cross-sectional area of the rocket in m^2 (diameter of 0.152 m)
+        A = np.pi * (0.2 / 2) ** 2  # Cross-sectional area of the rocket in m^2 (diameter of 0.152 m)
 
 
         for t in times:
@@ -716,12 +717,12 @@ def The5k():
 
     # Define Rocket Key Information
     rocketMass = 90.0 # Estimated mass of the rocket in kg
-    desired_engine_thrust = 5000 # Estimated thrust sea level  [N]
+    desired_engine_thrust = 2500 # Estimated thrust sea level  [N]
     Pc = 20 # Chamber presssure in bar (desired)
     fuel_stroage_density = 810 #795.6  # Density of RP-1 in kg/m^3 (approximate)
     ox_storage_density = 1140.0  # Density of LOX in kg/m^3 (approximate)
-    burn_time = 23  # Estimated burn time in seconds
-    expansion_ratio = 12  # No fixed expansion ratio for the 5k engine yet... 
+    burn_time = 40  # Estimated burn time in seconds
+    expansion_ratio = 6  # No fixed expansion ratio for the 5k engine yet... 
 
     # Calculate thrust to weight ratio
     thrust_to_weight_ratio = desired_engine_thrust / (rocketMass * g)  # Thrust to weight ratio
@@ -733,7 +734,7 @@ def The5k():
     The5k = RocketEngine('LOX', 'RP-1', Pc, expansion_ratio, burn_time, desired_engine_thrust, num_engines=1, Cd = 0.4) # Verification Engine: RS25 - Cryo-rocket.com
     of_data = The5k.display_MR_curves(of_ratios, fuel_stroage_density, ox_storage_density, engine_name=engine_name, target_of=2) # Display the performance curves for the 5k engine to determine optimal O/F
 
-    The5k.estimate_altitude(of_data, target_of=2, dt=0.1, recovery_mass=5, engine_mass=10, payload_mass=2, tank_mass_per_meter=6)  # Estimate altitude the rocket will reach with the optimal O/F ratio
+    The5k.estimate_altitude(of_data, target_of=2, dt=0.1, recovery_mass=5, engine_mass=10, payload_mass=2, tank_mass_per_meter=42.50)  # Estimate altitude the rocket will reach with the optimal O/F ratio
     pass
 
 
@@ -742,7 +743,7 @@ def The2_5k():
     # This is a function for a 2.5kN rocket engine LOX - KERO to test LOX Regen 
 
     engine_name = 'The25k'  # Name of the engine for display purposes
-    desired_engine_thrust = 2500 # Estimated thrust sea level [N]
+    desired_engine_thrust = 6000 # Estimated thrust sea level [N]
     Pc = 20 # Chamber presssure in bar (desired)
     fuel_stroage_density = 810 #795.6  # Density of RP-1 in kg/m^3 (approximate)
     ox_storage_density = 1140.0  # Density of LOX in kg/m
@@ -757,7 +758,7 @@ def The2_5k():
     of_data = The2_5k.display_MR_curves(of_ratios, fuel_stroage_density, ox_storage_density, engine_name=engine_name, target_of=2) # Display the performance curves for the 25k engine to determine optimal O/F
     
   
-    The2_5k.estimate_altitude(of_data, target_of=2, dt=0.1, recovery_mass=5, engine_mass=5, payload_mass=1, tank_mass_per_meter=6)  # Estimate altitude the rocket will reach with the optimal O/F ratio
+    The2_5k.estimate_altitude(of_data, target_of=2, dt=0.1, recovery_mass=5, engine_mass=5, payload_mass=1, tank_mass_per_meter=42.5)  # Estimate altitude the rocket will reach with the optimal O/F ratio
     pass
 
 

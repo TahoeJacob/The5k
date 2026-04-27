@@ -114,6 +114,15 @@ class ThermalSolution:
     rho_coolant: np.ndarray   # Coolant density [kg/m³]
     n_iters:     int          # Outer iterations required to converge
 
+    # Optional thermal-stress post-pass (populated when
+    # config.wall_2d_stress = True).  Each scalar array has shape (n,).
+    sigma_vm_peak:   "np.ndarray | None" = None   # max von Mises per station [Pa]
+    sigma_vm_hw:     "np.ndarray | None" = None   # avg σ_vm on hot wall [Pa]
+    sigma_vm_corner: "np.ndarray | None" = None   # σ_vm at channel-root corner [Pa]
+    sigma_zz_hw:     "np.ndarray | None" = None   # σ_zz on hot wall [Pa]
+    safety_factor:   "np.ndarray | None" = None   # σ_y(T_hw) / σ_vm_peak
+    stress_slices:   "dict | None"       = None   # optional full σ_vm(x,y) fields
+
 
 # -----------------------------------------------------------------------
 # Internal: friction factor (Colebrook-White)
@@ -1333,7 +1342,7 @@ def solve_thermal(flow: FlowSolution,
         print(f"  *** WARNING: T_hw_max = {T_hw_max:.0f} K  "
               f"exceeds wall_melt_T = {config.wall_melt_T:.0f} K ***")
 
-    return ThermalSolution(
+    thermal_sol = ThermalSolution(
         x           = flow.x,
         T_hw        = T_hw_arr,
         T_cw        = T_cw_arr,
@@ -1351,6 +1360,128 @@ def solve_thermal(flow: FlowSolution,
         rho_coolant = rho_arr,
         n_iters     = n_iters,
     )
+
+    # -------------------------------------------------------------------
+    # Optional thermal-stress post-pass (generalized plane strain,
+    # free axial, on the same unit cell as the 2-D wall solver).
+    # -------------------------------------------------------------------
+    if getattr(config, 'wall_2d_stress', False) and config.wall_2d:
+        _stress_post_pass(thermal_sol, flow, geom, cea, chan_geom, config)
+
+    return thermal_sol
+
+
+# -----------------------------------------------------------------------
+# Thermal-stress post-pass (plane-strain thermo-elastic solve)
+# -----------------------------------------------------------------------
+def _stress_post_pass(thermal: ThermalSolution,
+                       flow: FlowSolution,
+                       geom: EngineGeometry,
+                       cea:  CEAResult,
+                       chan_geom: ChannelGeometry,
+                       config: EngineConfig,
+                       slice_indices: list = None):
+    """
+    For each axial station, rebuild the 2-D wall mesh with the converged
+    thermal BCs, perform one Laplace solve to recover the full T_field,
+    then call the thermo-elastic solver and collect σ summaries.
+    """
+    from materials import get_material
+    from thermal_stress import solve_stress_2d
+
+    mat = get_material(config.wall_material)
+    T_ref = config.T_ref_stress
+
+    n = len(flow.x)
+    svm_peak   = np.zeros(n)
+    svm_hw     = np.zeros(n)
+    svm_corner = np.zeros(n)
+    szz_hw     = np.zeros(n)
+    sf         = np.zeros(n)
+    slices     = {}
+
+    if slice_indices is None:
+        # Default: throat + 10 equally-spaced stations
+        throat_idx = int(np.argmin(np.abs(flow.x - geom.L_c)))
+        slice_indices = sorted(set(
+            list(np.linspace(0, n - 1, 11, dtype=int)) + [throat_idx]))
+
+    print("\n--- Thermal stress post-pass ---")
+    print(f"  Material: {mat.name}  (T_ref = {T_ref:.0f} K)")
+    print(f"  Generalized plane strain, free axial, free outer surface")
+
+    for k in range(n):
+        x     = float(flow.x[k])
+        M     = float(flow.M[k])
+        P_gas = float(flow.P[k])
+        T_aw  = flow.T[k] * (1.0 + (cea.gamma_c - 1.0) / 2.0 * M ** 2 *
+                              cea.Pr_froz_c ** (1.0 / 3.0))
+        T_aw /= (1.0 + (cea.gamma_c - 1.0) / 2.0 * M ** 2)
+        T_aw *= cea.T_c / cea.T_c  # no-op, left for clarity
+
+        # Use converged BCs
+        h_g_k   = float(thermal.h_gas[k])
+        h_c_k   = float(thermal.h_coolant[k])
+        T_c_k   = float(thermal.T_coolant[k])
+        P_c_k   = float(thermal.P_coolant[k])
+
+        # Unit-cell geometry at this station
+        chan_w_k, chan_h_k, chan_t_k, chan_land_k = chan_geom.at(x)
+        chan_w_half = 0.5 * chan_w_k
+        land_half   = 0.5 * chan_land_k
+
+        x_nodes, y_nodes = _make_wall_grid(
+            chan_w_half, chan_t_k, chan_h_k, land_half)
+
+        # Solve Laplace once with converged BCs (no iteration — we already
+        # know T_hw/T_cw from the outer loop).
+        T_field, node_map, _, _, _, is_void = _build_wall_2d(
+            x_nodes, y_nodes, chan_w_half, chan_t_k,
+            h_g_k, T_aw, h_c_k, T_c_k, config.wall_k,
+            chan_h=chan_h_k)
+
+        # Stress solve
+        res = solve_stress_2d(
+            T_field, node_map, x_nodes, y_nodes, is_void,
+            chan_w_half, chan_t_k, chan_h_k,
+            P_gas, P_c_k, mat, T_ref)
+
+        if res is None:
+            continue
+
+        svm_peak[k]   = res["sigma_vm_peak"]
+        svm_hw[k]     = res["sigma_vm_hw"]
+        svm_corner[k] = res["sigma_vm_corner"]
+        szz_hw[k]     = res["sigma_zz_hw"]
+        sf[k]         = (mat.sigma_y(float(thermal.T_hw[k])) /
+                         max(res["sigma_vm_peak"], 1.0))
+
+        if k in slice_indices:
+            slices[k] = {
+                "x_mm":         x * 1000.0,
+                "sigma_vm":     res["sigma_vm_field"],
+                "sigma_zz":     res["sigma_zz_field"],
+                "is_solid":     res["is_solid_elem"],
+                "x_nodes":      x_nodes,
+                "y_nodes":      y_nodes,
+            }
+
+    thermal.sigma_vm_peak   = svm_peak
+    thermal.sigma_vm_hw     = svm_hw
+    thermal.sigma_vm_corner = svm_corner
+    thermal.sigma_zz_hw     = szz_hw
+    thermal.safety_factor   = sf
+    thermal.stress_slices   = slices
+
+    peak = float(np.max(svm_peak)) / 1e6
+    kpk  = int(np.argmax(svm_peak))
+    sy_T = mat.sigma_y(float(thermal.T_hw[kpk])) / 1e6
+    print(f"  Peak σ_vm = {peak:.0f} MPa at x = {flow.x[kpk]*1000:.0f} mm  "
+          f"(T_hw = {thermal.T_hw[kpk]:.0f} K, σ_y(T) = {sy_T:.0f} MPa, "
+          f"SF = {sf[kpk]:.2f})")
+    print(f"  Peak σ_vm (hot wall avg) = {np.max(svm_hw)/1e6:.0f} MPa")
+    print(f"  Peak σ_vm (channel corner) = {np.max(svm_corner)/1e6:.0f} MPa")
+    print(f"  Stored {len(slices)} full-field slices for viewer")
 
 
 # -----------------------------------------------------------------------

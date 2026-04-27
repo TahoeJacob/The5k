@@ -471,7 +471,10 @@ def _bell_control_points(geom: 'EngineGeometry'):
 def _write_dxf(filename, entities):
     """entities = list of pre-formatted DXF entity strings."""
     dxf = (
-        '0\nSECTION\n2\nHEADER\n0\nENDSEC\n'
+        '0\nSECTION\n2\nHEADER\n'
+        '9\n$INSUNITS\n70\n4\n'          # 4 = millimetres
+        '9\n$MEASUREMENT\n70\n1\n'       # 1 = metric
+        '0\nENDSEC\n'
         '0\nSECTION\n2\nENTITIES\n'
         + '\n'.join(entities) + '\n'
         '0\nENDSEC\n'
@@ -674,6 +677,27 @@ def export_dxf(geom: 'EngineGeometry', chan_geom, out_dir: str = 'exports'):
     contour_dxf = os.path.join(out_dir, 'engine_contour.dxf')
     _write_dxf(contour_dxf, contour_ents)
 
+    # ---------- 1b) Channel-ceiling revolve profile ----------
+    # Closed profile: hot wall + channel ceiling (offset by t_w + h_chan)
+    # + end caps.  Revolve this to get a solid ring reaching out to the
+    # top of the channels — use it as a revolve-cut reference for the
+    # channel height.
+    ceil_off_m = t_rep + h_rep
+    ceil_off_mm = ceil_off_m * 1000.0
+    ceil_hot_ents,  _ = _contour_primitives(geom, layer='CEIL_HOT',
+                                             radial_offset=0.0)
+    ceil_top_ents,  _ = _contour_primitives(geom, layer='CEIL_TOP',
+                                             radial_offset=ceil_off_m)
+    ceil_cap_inj = _dxf_line('CEIL_CAP',
+                             -L_c_mm, R_c_mm,
+                             -L_c_mm, R_c_mm + ceil_off_mm)
+    ceil_cap_exit = _dxf_line('CEIL_CAP',
+                               L_n_mm, R_e_mm,
+                               L_n_mm, R_e_mm + ceil_off_mm)
+    ceiling_ents = ceil_hot_ents + ceil_top_ents + [ceil_cap_inj, ceil_cap_exit]
+    ceiling_dxf = os.path.join(out_dir, 'channel_ceiling.dxf')
+    _write_dxf(ceiling_dxf, ceiling_ents)
+
     # ---------- 2) Channel paths ----------
 
     floor_off  = t_rep
@@ -693,6 +717,7 @@ def export_dxf(geom: 'EngineGeometry', chan_geom, out_dir: str = 'exports'):
     _, _, bell_ctrl = _bell_control_points(geom)
     print(f"\n--- DXF export (throat-centered, x=0 at throat) ---")
     print(f"  {contour_dxf}  (hot+cool walls, t_w={t_w_mm:.2f} mm, end-capped)")
+    print(f"  {ceiling_dxf}  (hot wall + channel ceiling at t_w+h={ceil_off_mm:.2f} mm, end-capped)")
     print(f"  {paths_dxf}   (offset {floor_off*1000:.2f}/{center_off*1000:.2f}/"
           f"{ceil_off*1000:.2f} mm on 3 layers)")
     print(f"  Bell Bezier control points (mm, throat-centered) — for manual")

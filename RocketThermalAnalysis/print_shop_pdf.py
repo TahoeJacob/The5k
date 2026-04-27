@@ -25,7 +25,7 @@ def main():
 
     L_c     = geom.L_c
     L_total = L_c + geom.L_nozzle
-    t_w     = 0.9e-3                # wall thickness (constant)
+    t_w     = 1.0e-3                # wall thickness (constant)
     chan_w  = 1.0e-3                # constant 1 mm
     h_throat = config.chan_h_throat
     N_throat = config.N_channels_throat

@@ -53,7 +53,7 @@ config = EngineConfig(
 
     # Wall material — Copper (CuCrZr) — operational limit, not melting
     wall_k         = 300.0,     # [W/m·K]
-    wall_roughness = 6.3e-6,    # SLM
+    wall_roughness = 6.3e-5,    # SLM
     wall_melt_T    = 1073.0,    # [K] CuCrZr strength limit (800°C, Waugh 2021)
 
     # Coolant inlet (counter-current from nozzle exit)
@@ -75,7 +75,7 @@ config = EngineConfig(
     chan_h_exit    = 1.5e-3,    # Sec3 exit
 
     # Film cooling — 5% (matches RPA film slot at injector face)
-    film_fraction  = 0.05,
+    film_fraction  = 0.0,
     film_inject_x  = 0.0,
     film_coolant   = "RP1",
     film_T_inlet   = 298.0,
@@ -83,10 +83,42 @@ config = EngineConfig(
     film_model     = "simon",
 
     wall_2d=True,
+    wall_2d_stress=False,
+    wall_material="CuCrZr",
+    T_ref_stress=293.0,
     use_integral_bl=False,
     C_bartz=0.026,
 )
 
+
+# =============================================================================
+# LAUNCHER E1-LOXCOOL725 — LOX regen-cooled copper RP-1/LOX engine
+#   Thrust: 530 kgf (5.2 kN vac)  Pc: 46 bar  OF: 2.2  No film cooling
+#   3D printed copper (EOS M290), LOX as regen coolant
+#   Geometry estimated — similar thrust class to 2.5 kN engine
+# =============================================================================
+# config = EngineConfig(
+#     fuel="RP-1", oxidizer="LOX", coolant="Oxygen",
+#     P_c=46.0e5,
+#     F_vac=5200.0,
+#     OF=2.2,
+#     exp_ratio=6.0,
+#     cont_ratio=8.0,
+#     L_star=1.0,
+#     theta1=30.0, thetaD=30.0, thetaE=12.0,
+#     R_chamber_mult=1.5, R_throat_conv_mult=1.5, R_throat_div_mult=0.382,
+#     wall_k=300.0, wall_roughness=1.0e-5, wall_melt_T=1073.0,
+#     T_coolant_inlet=90.0,       # LOX subcooled liquid
+#     P_coolant_inlet=80.0e5,     # Above Pc + margin for ΔP headroom
+#     mdot_coolant=None,          # → auto from mdot_ox (see run())
+#     N_channels=34,
+#     dx=1e-3,
+#     chan_h_throat=2.0e-3, chan_h_chamber=3.0e-3, chan_h_exit=3.0e-3,
+#     film_fraction=0.0,
+#     wall_2d=True, wall_2d_stress=False,
+#     wall_material="CuCrZr", T_ref_stress=293.0,
+#     use_integral_bl=False, C_bartz=0.026,
+# )
 
 
 # =============================================================================
@@ -166,17 +198,22 @@ def run():
     geom = size_engine(config, cea_result)
     plot_contour(geom, dx=5e-4)
 
-    # Derive coolant mass flow if not set (fuel minus film)
+    # Derive coolant mass flow if not set
     if config.mdot_coolant is None:
-        config.mdot_coolant = geom.mdot_fuel * (1.0 - config.film_fraction)
-        print(f"\nDerived mdot_coolant = mdot_fuel × (1 - film) = "
-              f"{config.mdot_coolant:.4f} kg/s  "
-              f"(film = {config.film_fraction*100:.0f}%)")
+        if config.coolant == "Oxygen":
+            config.mdot_coolant = geom.mdot_ox
+            print(f"\nDerived mdot_coolant = mdot_ox = "
+                  f"{config.mdot_coolant:.4f} kg/s  (LOX regen)")
+        else:
+            config.mdot_coolant = geom.mdot_fuel * (1.0 - config.film_fraction)
+            print(f"\nDerived mdot_coolant = mdot_fuel × (1 - film) = "
+                  f"{config.mdot_coolant:.4f} kg/s  "
+                  f"(film = {config.film_fraction*100:.0f}%)")
 
     # Define Cooling Channel Geometry
     x_j = np.arange(0, geom.L_c + geom.L_nozzle, config.dx) # Create slices at each dx
     CHAN_W = 1.0e-3  # Constant channel width [m] — matches RPA throat (Sec2)
-    chan_t = np.full(shape=(len(x_j),), fill_value=0.9e-3) # 0.9mm wall thickness
+    chan_t = np.full(shape=(len(x_j),), fill_value=1.0e-3) # 1.0mm wall thickness (SLM shop min)
     chan_w = np.full(shape=(len(x_j),), fill_value=CHAN_W)  # 1.5mm constant width
     chan_land = np.zeros(len(x_j)) # land = circ/N - width (computed below)
     chan_h = np.zeros(len(x_j))
