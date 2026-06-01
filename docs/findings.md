@@ -5,6 +5,47 @@ Each entry is short — capture *why*, not just *what*.
 
 ---
 
+## 2026-06-01 — N_throat sweep: design freeze at N=36
+
+**Question:** Could reducing channel count (higher V per channel via higher
+mdot per channel) close the T_hw margin?
+
+**Sweep result:** Models give OPPOSITE optimums for the design knob.
+
+| N_throat | land [mm] | 1D fin T_hw [K] | 2D wall T_hw [K] |
+| 20       | 4.17      | 1037 (−59)      | 1362 (+85)       |
+| 24       | 3.28      | 1054 (−42)      | 1330 (+53)       |
+| 36 (cur) | 1.79      | 1096            | 1277             |
+| 44       | 1.24      | 1118 (+22)      | 1257 (−20)       |
+
+- **1D fin says fewer channels are better** (higher V dominates fin)
+- **2D wall says more channels are better** (fewer/smaller metal blocks
+  for heat to accumulate in — more accurate for high-k materials)
+- Real-engine practice (LUMEN) packs channels densely → aligns with 2D
+  prediction direction
+
+**Decision:** Freeze design at N=36. Reasons:
+- Disagreement between models means the optimum is uncertain
+- Even at best case (~20-60 K improvement), still doesn't close gap to
+  the validated 2D model's overshoot of 200 K
+- Marginal CAD risk (SLM land floor at N=44) not worth uncertain reward
+- Real T_hw measurement on first fire will resolve the model
+  disagreement empirically
+
+**The right next move is firing the engine, not tweaking the design.**
+Hot-fire data at N=36 will tell us:
+- Whether the 1D fin or 2D wall model is closer to truth
+- Whether the design has actual margin or actual problem
+- What's the bias correction for future iterations
+
+If T_cw measurements show acceptable margin → run at full P_c.
+If T_cw shows trouble → abort, redesign with measured bias correction
+applied to the validated model.
+
+**Refs:** `/tmp/n_channel_sweep.py`, `/tmp/n_sweep_2d.py`.
+
+---
+
 ## 2026-06-01 — Betti SSME MCC validation: actually a PASS at −0.6 % T_hw
 
 **Initial claim retracted.** I had compared our T_hw to the older nominal
