@@ -593,7 +593,7 @@ def _coolant_heat(x: float, T_cw: float, T_cool: float, P_cool: float,
     # Note: P = 2·(chan_land+dx) is WRONG for this geometry — it includes the
     # axial end faces and makes m² mesh-dependent (diverges as dx→0).
     DT = T_cw - T_cool
-    if chan_land > 1e-9:
+    if chan_land > 1e-9 and config.use_fin:
         m_fin  = np.sqrt(2.0 * h_cool / (k_w * chan_land))
         L_fin  = chan_h + chan_land / 2.0          # Incropera adiabatic-tip correction
         q_fin  = np.sqrt(2.0 * h_cool * k_w * chan_land) * dx * DT * np.tanh(

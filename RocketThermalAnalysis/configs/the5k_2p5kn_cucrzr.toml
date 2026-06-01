@@ -26,7 +26,7 @@ R_throat_div_mult  = 0.382
 
 [wall]
 material     = "CuCrZr"
-k            = 300.0       # [W/m·K]
+k            = 170      # [W/m·K]
 roughness    = 6.3e-5      # SLM 3D-print
 melt_T       = 1073.0      # [K] CuCrZr 800 °C strength limit (Waugh 2021)
 T_ref_stress = 293.0
@@ -51,7 +51,14 @@ split_r_ratio    = 2.0
 split_transition = 10e-3
 dx               = 1e-3
 height_taper = [["chamber", 1.3e-3], ["throat", 1.1e-3], ["exit", 1.5e-3]]
-width_taper  = [["chamber", 1.2e-3], ["throat", 1.2e-3], ["exit", 1.2e-3]]
+width_taper  = [
+    ["chamber", 1.5e-3],   # N=72 chamber: low HF, wider for lower ΔP
+    [0.56,      1.5e-3],   # ~148 mm: end of N=72 zone
+    [0.60,      1.2e-3],   # ~158 mm: post-bifurcation, narrow for throat velocity
+    ["throat",  1.2e-3],
+    [0.80,      1.2e-3],   # ~211 mm: end of throat band
+    ["exit",    1.5e-3],   # bell: HF decayed, re-open
+]
 wall_t_taper = [["chamber", 1.0e-3], ["throat", 1.0e-3], ["exit", 1.0e-3]]
 
 [film]

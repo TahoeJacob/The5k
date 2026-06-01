@@ -143,6 +143,7 @@ def load_config(path: str | Path) -> EngineConfig:
         wall_2d_stress  = bool(solver.get("wall_2d_stress", False)),
         use_integral_bl = bool(solver.get("use_integral_bl", False)),
         C_bartz         = float(solver.get("C_bartz", 0.026)),
+        use_fin         = bool(solver.get("use_fin", True)),
 
         # Channels (preferred path — overrides any legacy field)
         channels        = channels,

@@ -135,6 +135,14 @@ class EngineConfig:
                                # uncertainty band. Use to bracket model
                                # sensitivity, not as a permanent calibration.
 
+    use_fin: bool = True  # True (default): include rectangular rib fin
+                          # enhancement on the coolant side per Incropera
+                          # adiabatic-tip form (matches DLR HARCC/LUMEN
+                          # validated configs). False: channel-bottom
+                          # convection only — used for diagnostic
+                          # comparison against codes (e.g. RPA) that
+                          # appear not to credit fin contribution.
+
     # -----------------------------------------------------------------------
     # Film cooling  (set film_fraction > 0 to enable)
     # -----------------------------------------------------------------------
